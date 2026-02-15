@@ -171,23 +171,53 @@ export class WebhookHandler {
       messageType: message.type,
     });
 
-    // Mark message as read
-    await whatsappClient.markAsRead(message.id);
+    try {
+      // Mark message as read
+      logger.info({
+        type: 'marking_message_as_read',
+        messageId: message.id,
+      });
+      await whatsappClient.markAsRead(message.id);
 
-    // Send initial acknowledgment
-    await this.sendAcknowledgment(message);
+      // Send initial acknowledgment
+      logger.info({
+        type: 'sending_acknowledgment',
+        messageId: message.id,
+        messageType: message.type,
+      });
+      await this.sendAcknowledgment(message);
 
-    // Create message context
-    const context: MessageContext = {
-      userId: message.from,
-      messageId: message.id,
-      timestamp: new Date(parseInt(message.timestamp) * 1000),
-      language: 'en', // Default, will be detected by router
-      userName: contactName,
-    };
+      // Create message context
+      const context: MessageContext = {
+        userId: message.from,
+        messageId: message.id,
+        timestamp: new Date(parseInt(message.timestamp) * 1000),
+        language: 'en', // Default, will be detected by router
+        userName: contactName,
+      };
 
-    // Route message to appropriate handler
-    await messageRouter.route(message, context);
+      logger.info({
+        type: 'routing_message',
+        messageId: message.id,
+        context,
+      });
+
+      // Route message to appropriate handler
+      await messageRouter.route(message, context);
+
+      logger.info({
+        type: 'message_processed_successfully',
+        messageId: message.id,
+      });
+    } catch (error) {
+      logger.error({
+        type: 'message_processing_error',
+        messageId: message.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      throw error;
+    }
   }
 
   /**

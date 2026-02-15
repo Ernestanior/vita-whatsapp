@@ -563,10 +563,31 @@ I'm still learning to understand natural language! For now, please use these com
 📸 或發送食物照片進行營養分析`,
     };
 
-    await whatsappClient.sendTextMessage(
-      message.from,
-      messages[context.language]
-    );
+    logger.info({
+      type: 'sending_natural_language_response',
+      messageId: message.id,
+      to: message.from,
+      language: context.language,
+    });
+
+    try {
+      await whatsappClient.sendTextMessage(
+        message.from,
+        messages[context.language]
+      );
+      
+      logger.info({
+        type: 'natural_language_response_sent',
+        messageId: message.id,
+      });
+    } catch (error) {
+      logger.error({
+        type: 'natural_language_response_error',
+        messageId: message.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
   }
 
   /**
