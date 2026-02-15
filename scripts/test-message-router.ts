@@ -6,7 +6,7 @@
  */
 
 import { MessageRouter } from '../src/lib/whatsapp/message-router';
-import { TextHandler, Command } from '../src/lib/whatsapp/text-handler';
+import { TextHandler } from '../src/lib/whatsapp/text-handler';
 import type { Message, MessageContext } from '../src/types/whatsapp';
 
 // Mock logger to avoid errors

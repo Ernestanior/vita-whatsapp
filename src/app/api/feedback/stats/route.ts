@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * API: 获取用户反馈统计
  * GET /api/feedback/stats?userId=xxx

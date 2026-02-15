@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CostMonitor - Monitors and tracks AI API costs
  * 

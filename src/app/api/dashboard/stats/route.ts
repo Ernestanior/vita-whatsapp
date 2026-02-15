@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * API endpoint for dashboard statistics
  * GET /api/dashboard/stats

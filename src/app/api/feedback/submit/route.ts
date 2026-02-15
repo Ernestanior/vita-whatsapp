@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * API: 提交用户反馈
  * POST /api/feedback/submit

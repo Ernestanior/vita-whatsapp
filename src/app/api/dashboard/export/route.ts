@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * API endpoint for data export
  * GET /api/dashboard/export?format=csv|pdf

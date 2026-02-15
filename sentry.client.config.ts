@@ -20,10 +20,8 @@ Sentry.init({
 
   // 启用性能监控
   integrations: [
-    new Sentry.BrowserTracing({
-      tracePropagationTargets: ['localhost', /^https:\/\/yourapp\.com/],
-    }),
-    new Sentry.Replay({
+    Sentry.browserTracingIntegration(),
+    Sentry.replayIntegration({
       maskAllText: true,
       blockAllMedia: true,
     }),

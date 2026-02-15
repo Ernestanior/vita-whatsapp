@@ -16,7 +16,7 @@ Sentry.init({
 
   // 启用性能监控
   integrations: [
-    new Sentry.Integrations.Http({ tracing: true }),
+    Sentry.httpIntegration(),
   ],
 
   // 过滤敏感信息

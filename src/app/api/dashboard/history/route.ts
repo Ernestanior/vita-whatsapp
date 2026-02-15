@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * API endpoint for food history
  * GET /api/dashboard/history

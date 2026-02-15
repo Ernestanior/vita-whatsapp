@@ -14,7 +14,7 @@
 import { foodRecognizer } from '../src/lib/food-recognition/recognizer';
 import { ratingEngine } from '../src/lib/rating/rating-engine';
 import { cacheManager } from '../src/lib/cache/cache-manager';
-import { profileManager } from '../src/lib/profile/profile-manager';
+// import { profileManager } from '../src/lib/profile/profile-manager';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 

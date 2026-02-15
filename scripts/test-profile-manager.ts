@@ -45,8 +45,8 @@ const mockSupabase = {
         return { error: null };
       },
     }),
-    select: (fields: string) => ({
-      eq: (field: string, value: any) => ({
+    select: (_fields: string) => ({
+      eq: (_field: string, value: any) => ({
         single: async () => {
           const profile = mockProfiles.get(value);
           return { data: profile || null, error: profile ? null : { message: 'Not found' } };

@@ -27,6 +27,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@sentry/nextjs": "^10.38.0",
     "@sentry/node": "^10.38.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20.19.33",
