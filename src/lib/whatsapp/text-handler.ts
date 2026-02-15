@@ -43,9 +43,28 @@ export class TextHandler {
       messageId: message.id,
       textLength: text.length,
       language: context.language,
+      text: text.substring(0, 50), // Log first 50 chars
     });
 
     try {
+      // TEMPORARY: Quick response for debugging
+      logger.info({
+        type: 'sending_quick_test_response',
+        messageId: message.id,
+      });
+      
+      await whatsappClient.sendTextMessage(
+        message.from,
+        `✅ Message received: "${text}"\n\nI'm working! Send /help for commands.`
+      );
+      
+      logger.info({
+        type: 'quick_test_response_sent',
+        messageId: message.id,
+      });
+      
+      return; // TEMPORARY: Skip other processing for now
+      
       // Check if user is in profile setup flow
       if (profileManager.isInSetupFlow(context.userId)) {
         const setupComplete = await profileManager.processSetupInput(
