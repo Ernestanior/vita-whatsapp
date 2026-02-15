@@ -1,0 +1,708 @@
+/**
+ * ImageHandler - Handles image messages with complete food recognition flow
+ * 
+ * Flow:
+ * 1. Check user quota
+ * 2. Download and process image
+ * 3. Check cache for existing recognition
+ * 4. If not cached, call food recognizer
+ * 5. Get health rating from rating engine
+ * 6. Save record to database
+ * 7. Upload image to storage
+ * 8. Send response with quick reply buttons
+ * 9. Cache the result
+ * 
+ * Requirements: 1.1, 1.2, 1.3, 3.1, 17.1, 17.2
+ */
+
+import { logger } from '@/utils/logger';
+import { whatsappClient } from './client';
+import { foodRecognizer } from '@/lib/food-recognition/recognizer';
+import { ratingEngine } from '@/lib/rating/rating-engine';
+import { cacheManager } from '@/lib/cache/cache-manager';
+import { profileManager } from '@/lib/profile/profile-manager';
+import { createClient } from '@/lib/supabase/server';
+import { imageHandler as imageProcessor } from '@/lib/food-recognition/image-handler';
+import type { Message, MessageContext } from '@/types/whatsapp';
+import type { FoodRecognitionResult, HealthRating } from '@/types';
+import type { FoodRecordInsert } from '@/lib/database/schema';
+
+export class ImageHandler {
+  /**
+   * Handle image message with complete flow
+   */
+  async handle(message: Message, context: MessageContext): Promise<void> {
+    const startTime = Date.now();
+
+    try {
+      logger.info({
+        type: 'image_handling_started',
+        userId: context.userId,
+        messageId: message.id,
+      });
+
+      // 1. Send initial acknowledgment
+      await this.sendAcknowledgment(context);
+
+      // 2. Check if user has profile
+      const hasProfile = await profileManager.hasProfile(context.userId);
+      if (!hasProfile) {
+        await this.sendProfileSetupPrompt(context);
+        return;
+      }
+
+      // 3. Check and increment quota atomically (prevents race conditions)
+      const quotaResult = await this.checkAndIncrementQuota(context.userId);
+      if (!quotaResult.allowed) {
+        await this.sendQuotaExceededMessage(context, quotaResult);
+        return;
+      }
+
+      // 4. Download image
+      if (!message.image?.id) {
+        throw new Error('No image ID in message');
+      }
+
+      const imageBuffer = await whatsappClient.downloadMedia(message.image.id);
+      logger.info({
+        type: 'image_downloaded',
+        size: imageBuffer.length,
+        messageId: message.id,
+      });
+
+      // 5. Process image and get hash
+      const processed = await imageProcessor.processImage(imageBuffer);
+      const imageHash = processed.hash;
+
+      // 6. Check cache
+      const cachedResult = await cacheManager.getFoodRecognition(imageHash);
+      let recognitionResult: FoodRecognitionResult;
+      let tokensUsed = 0;
+
+      if (cachedResult) {
+        logger.info({
+          type: 'cache_hit',
+          imageHash,
+          userId: context.userId,
+        });
+        recognitionResult = cachedResult;
+      } else {
+        // 7. Call food recognizer
+        logger.info({
+          type: 'calling_food_recognizer',
+          userId: context.userId,
+        });
+
+        const recognitionResponse = await foodRecognizer.recognizeFood(
+          imageBuffer,
+          {
+            userId: context.userId,
+            language: context.language,
+            mealTime: context.timestamp,
+          }
+        );
+
+        if (!recognitionResponse.success || !recognitionResponse.result) {
+          await this.sendErrorResponse(context, recognitionResponse.error);
+          return;
+        }
+
+        recognitionResult = recognitionResponse.result;
+        tokensUsed = recognitionResponse.tokensUsed || 0;
+
+        // Cache the result
+        await cacheManager.setFoodRecognition(imageHash, recognitionResult);
+      }
+
+      // 8. Get user profile for rating
+      const profile = await profileManager.getProfile(context.userId);
+      if (!profile) {
+        throw new Error('Profile not found after check');
+      }
+
+      // Convert database profile to rating engine format
+      const ratingProfile = {
+        userId: profile.user_id,
+        height: profile.height,
+        weight: profile.weight,
+        age: profile.age ?? undefined,
+        gender: profile.gender ?? undefined,
+        goal: profile.goal,
+        activityLevel: profile.activity_level,
+        digestTime: profile.digest_time,
+        quickMode: profile.quick_mode,
+        createdAt: new Date(profile.created_at),
+        updatedAt: new Date(profile.updated_at),
+      };
+
+      // 9. Get health rating
+      logger.info({
+        type: 'calculating_health_rating',
+        userId: context.userId,
+      });
+
+      const healthRating = await ratingEngine.evaluate(recognitionResult, ratingProfile);
+
+      // 10. Upload image to storage
+      const imageUrl = await this.uploadImage(
+        context.userId,
+        processed.buffer,
+        imageHash
+      );
+
+      // 11. Save record to database
+      const recordId = await this.saveRecord(
+        context.userId,
+        imageUrl,
+        imageHash,
+        recognitionResult,
+        healthRating
+      );
+
+      // 12. Save record and quota already incremented atomically
+      // No need to call incrementUsage separately
+
+      // 13. Send response with quick reply buttons
+      await this.sendResponse(
+        context,
+        recognitionResult,
+        healthRating,
+        recordId
+      );
+
+      const processingTime = Date.now() - startTime;
+      logger.info({
+        type: 'image_handling_completed',
+        userId: context.userId,
+        messageId: message.id,
+        processingTime,
+        tokensUsed,
+        cached: !!cachedResult,
+      });
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      logger.error({
+        type: 'image_handling_error',
+        userId: context.userId,
+        messageId: message.id,
+        processingTime,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      await this.sendGenericError(context);
+    }
+  }
+
+  /**
+   * Send initial acknowledgment (< 3 seconds)
+   */
+  private async sendAcknowledgment(context: MessageContext): Promise<void> {
+    const messages = {
+      'en': '📸 Got your photo! Analyzing your food...',
+      'zh-CN': '📸 收到照片！正在分析您的食物...',
+      'zh-TW': '📸 收到照片！正在分析您的食物...',
+    };
+
+    await whatsappClient.sendTextMessage(
+      context.userId,
+      messages[context.language]
+    );
+  }
+
+  /**
+   * Atomically check and increment quota (prevents race conditions)
+   * Fixed: Issue #1 - Race condition in quota checking
+   */
+  private async checkAndIncrementQuota(userId: string): Promise<{
+    allowed: boolean;
+    remaining: number;
+    limit: number;
+    tier: string;
+  }> {
+    const supabase = await createClient();
+
+    // Get user subscription
+    const { data: subscription } = await supabase
+      .from('subscriptions')
+      .select('tier, status')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .single();
+
+    // Premium/Pro users have unlimited quota
+    if (subscription && subscription.tier !== 'free') {
+      return {
+        allowed: true,
+        remaining: Infinity,
+        limit: Infinity,
+        tier: subscription.tier,
+      };
+    }
+
+    // Free users: use atomic operation
+    const today = new Date().toISOString().split('T')[0];
+    const { data, error } = await supabase.rpc('check_and_increment_quota', {
+      p_user_id: userId,
+      p_date: today,
+      p_limit: 3, // Free tier limit
+    });
+
+    if (error) {
+      logger.error({
+        type: 'quota_check_error',
+        userId,
+        error: error.message,
+      });
+      throw new Error('Failed to check quota');
+    }
+
+    if (!data || data.length === 0) {
+      throw new Error('No data returned from quota check');
+    }
+
+    const result = data[0];
+    return {
+      allowed: result.allowed,
+      remaining: result.remaining,
+      limit: 3,
+      tier: 'free',
+    };
+  }
+
+  /**
+   * Check user quota (deprecated - will be replaced with atomic operation)
+   * @deprecated This method has a race condition. Use checkAndIncrementQuota instead.
+   */
+  private async checkQuota(userId: string): Promise<boolean> {
+    const supabase = await createClient();
+
+    // Get user subscription
+    const { data: subscription } = await supabase
+      .from('subscriptions')
+      .select('tier, status')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .single();
+
+    // Premium/Pro users have unlimited quota
+    if (subscription && subscription.tier !== 'free') {
+      return true;
+    }
+
+    // Check today's usage for free users
+    const today = new Date().toISOString().split('T')[0];
+
+    const { data: quota } = await supabase
+      .from('usage_quotas')
+      .select('recognitions_used, recognitions_limit')
+      .eq('user_id', userId)
+      .eq('date', today)
+      .single();
+
+    if (!quota) {
+      // No record yet, user has quota
+      return true;
+    }
+
+    return quota.recognitions_used < quota.recognitions_limit;
+  }
+
+  /**
+   * Increment usage quota (deprecated - will be removed)
+   * @deprecated This method has a race condition. Use checkAndIncrementQuota instead.
+   */
+  private async incrementUsage(userId: string): Promise<void> {
+    const supabase = await createClient();
+    const today = new Date().toISOString().split('T')[0];
+
+    // Use database function to increment usage
+    const { error } = await supabase.rpc('increment_usage', {
+      p_user_id: userId,
+      p_date: today,
+    });
+
+    if (error) {
+      logger.error({
+        type: 'increment_usage_error',
+        userId,
+        error: error.message,
+      });
+      // Don't throw - this shouldn't block the user
+    }
+  }
+
+  /**
+   * Upload image to Supabase Storage
+   */
+  private async uploadImage(
+    userId: string,
+    imageBuffer: Buffer,
+    imageHash: string
+  ): Promise<string> {
+    const supabase = await createClient();
+
+    // Generate filename: userId/hash.jpg
+    const filename = `${userId}/${imageHash}.jpg`;
+
+    const { error } = await supabase.storage
+      .from('food-images')
+      .upload(filename, imageBuffer, {
+        contentType: 'image/jpeg',
+        cacheControl: '3600',
+        upsert: true, // Overwrite if exists
+      });
+
+    if (error) {
+      logger.error({
+        type: 'image_upload_error',
+        userId,
+        error: error.message,
+      });
+      throw new Error('Failed to upload image');
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('food-images')
+      .getPublicUrl(filename);
+
+    return urlData.publicUrl;
+  }
+
+  /**
+   * Save food record to database
+   */
+  private async saveRecord(
+    userId: string,
+    imageUrl: string,
+    imageHash: string,
+    recognitionResult: FoodRecognitionResult,
+    healthRating: HealthRating
+  ): Promise<string> {
+    const supabase = await createClient();
+
+    const record: FoodRecordInsert = {
+      user_id: userId,
+      image_url: imageUrl,
+      image_hash: imageHash,
+      recognition_result: recognitionResult as any,
+      health_rating: healthRating as any,
+      meal_context: recognitionResult.mealContext,
+    };
+
+    const { data, error } = await supabase
+      .from('food_records')
+      .insert(record)
+      .select('id')
+      .single();
+
+    if (error) {
+      logger.error({
+        type: 'record_save_error',
+        userId,
+        error: error.message,
+      });
+      throw new Error('Failed to save record');
+    }
+
+    return data.id;
+  }
+
+  /**
+   * Send response with recognition result and quick reply buttons
+   */
+  private async sendResponse(
+    context: MessageContext,
+    result: FoodRecognitionResult,
+    rating: HealthRating,
+    recordId: string
+  ): Promise<void> {
+    // Format the response message
+    const message = this.formatResponseMessage(result, rating, context.language);
+
+    // Send the main message
+    await whatsappClient.sendTextMessage(context.userId, message);
+
+    // Send quick reply buttons
+    await this.sendQuickReplyButtons(context, recordId);
+  }
+
+  /**
+   * Format response message with recognition and rating
+   */
+  private formatResponseMessage(
+    result: FoodRecognitionResult,
+    rating: HealthRating,
+    language: 'en' | 'zh-CN' | 'zh-TW'
+  ): string {
+    const ratingEmoji = {
+      green: '🟢',
+      yellow: '🟡',
+      red: '🔴',
+    };
+
+    const ratingText = {
+      'en': { green: 'Healthy', yellow: 'Moderate', red: 'Unhealthy' },
+      'zh-CN': { green: '健康', yellow: '适中', red: '不健康' },
+      'zh-TW': { green: '健康', yellow: '適中', red: '不健康' },
+    };
+
+    let message = '';
+
+    // Header with rating
+    message += `${ratingEmoji[rating.overall]} ${ratingText[language][rating.overall]} (${rating.score}/100)\n\n`;
+
+    // Food items
+    if (language === 'en') {
+      message += '🍽️ Detected Food:\n';
+      for (const food of result.foods) {
+        message += `• ${food.name} (${food.portion})\n`;
+        message += `  ${Math.round((food.nutrition.calories.min + food.nutrition.calories.max) / 2)} kcal\n`;
+      }
+    } else {
+      message += '🍽️ 识别的食物：\n';
+      for (const food of result.foods) {
+        message += `• ${food.nameLocal} (${food.portion})\n`;
+        message += `  ${Math.round((food.nutrition.calories.min + food.nutrition.calories.max) / 2)} 千卡\n`;
+      }
+    }
+
+    message += '\n';
+
+    // Total nutrition
+    const avgCal = Math.round(
+      (result.totalNutrition.calories.min + result.totalNutrition.calories.max) / 2
+    );
+    const avgProtein = Math.round(
+      (result.totalNutrition.protein.min + result.totalNutrition.protein.max) / 2
+    );
+    const avgCarbs = Math.round(
+      (result.totalNutrition.carbs.min + result.totalNutrition.carbs.max) / 2
+    );
+    const avgFat = Math.round(
+      (result.totalNutrition.fat.min + result.totalNutrition.fat.max) / 2
+    );
+
+    if (language === 'en') {
+      message += '📊 Total Nutrition:\n';
+      message += `• Calories: ${avgCal} kcal\n`;
+      message += `• Protein: ${avgProtein}g\n`;
+      message += `• Carbs: ${avgCarbs}g\n`;
+      message += `• Fat: ${avgFat}g\n`;
+    } else {
+      message += '📊 总营养：\n';
+      message += `• 卡路里：${avgCal} 千卡\n`;
+      message += `• 蛋白质：${avgProtein}克\n`;
+      message += `• 碳水：${avgCarbs}克\n`;
+      message += `• 脂肪：${avgFat}克\n`;
+    }
+
+    message += '\n';
+
+    // Health factors
+    if (language === 'en') {
+      message += '💡 Health Analysis:\n';
+      for (const factor of rating.factors) {
+        const emoji = factor.status === 'good' ? '✅' : factor.status === 'moderate' ? '⚠️' : '❌';
+        message += `${emoji} ${factor.message}\n`;
+      }
+    } else {
+      message += '💡 健康分析：\n';
+      for (const factor of rating.factors) {
+        const emoji = factor.status === 'good' ? '✅' : factor.status === 'moderate' ? '⚠️' : '❌';
+        message += `${emoji} ${factor.message}\n`;
+      }
+    }
+
+    // Suggestions
+    if (rating.suggestions.length > 0) {
+      message += '\n';
+      if (language === 'en') {
+        message += '💪 Suggestions:\n';
+      } else {
+        message += '💪 建议：\n';
+      }
+      for (const suggestion of rating.suggestions) {
+        message += `• ${suggestion}\n`;
+      }
+    }
+
+    return message;
+  }
+
+  /**
+   * Send quick reply buttons
+   */
+  private async sendQuickReplyButtons(
+    context: MessageContext,
+    recordId: string
+  ): Promise<void> {
+    const buttonTexts = {
+      'en': {
+        record: '✅ Record',
+        modify: '✏️ Modify',
+        ignore: '❌ Ignore',
+      },
+      'zh-CN': {
+        record: '✅ 记录',
+        modify: '✏️ 修改',
+        ignore: '❌ 忽略',
+      },
+      'zh-TW': {
+        record: '✅ 記錄',
+        modify: '✏️ 修改',
+        ignore: '❌ 忽略',
+      },
+    };
+
+    const buttons = buttonTexts[context.language];
+
+    // Send interactive button message
+    await whatsappClient.sendInteractiveButtons(
+      context.userId,
+      context.language === 'en' 
+        ? 'What would you like to do?'
+        : '您想做什么？',
+      [
+        { id: `record_${recordId}`, title: buttons.record },
+        { id: `modify_${recordId}`, title: buttons.modify },
+        { id: `ignore_${recordId}`, title: buttons.ignore },
+      ]
+    );
+  }
+
+  /**
+   * Send profile setup prompt
+   */
+  private async sendProfileSetupPrompt(context: MessageContext): Promise<void> {
+    const messages = {
+      'en': `👋 Welcome to Vita AI!
+
+Before I can analyze your food, I need to know a bit about you.
+
+Let's set up your health profile - it only takes a minute!
+
+Type "start" to begin, or send me your height in cm (e.g., 170)`,
+
+      'zh-CN': `👋 欢迎使用 Vita AI！
+
+在分析您的食物之前，我需要了解一些关于您的信息。
+
+让我们设置您的健康画像 - 只需一分钟！
+
+输入"开始"或直接告诉我您的身高（厘米，例如：170）`,
+
+      'zh-TW': `👋 歡迎使用 Vita AI！
+
+在分析您的食物之前，我需要了解一些關於您的信息。
+
+讓我們設置您的健康畫像 - 只需一分鐘！
+
+輸入"開始"或直接告訴我您的身高（厘米，例如：170）`,
+    };
+
+    await whatsappClient.sendTextMessage(
+      context.userId,
+      messages[context.language]
+    );
+
+    // Initialize profile setup
+    await profileManager.initializeProfile(context.userId, context.language);
+  }
+
+  /**
+   * Send quota exceeded message
+   */
+  private async sendQuotaExceededMessage(
+    context: MessageContext,
+    quotaResult: { remaining: number; limit: number }
+  ): Promise<void> {
+    const messages = {
+      'en': `📊 You've reached your daily limit of ${quotaResult.limit} free scans!
+
+Upgrade to Premium for:
+✨ Unlimited food recognition
+📈 Daily health summaries
+📊 Advanced analytics
+
+Type "upgrade" to learn more, or come back tomorrow for ${quotaResult.limit} more free scans!`,
+
+      'zh-CN': `📊 您今天的 ${quotaResult.limit} 次免费识别已用完！
+
+升级到 Premium 享受：
+✨ 无限次食物识别
+📈 每日健康总结
+📊 高级数据分析
+
+输入"升级"了解更多，或明天再来获得 ${quotaResult.limit} 次免费识别！`,
+
+      'zh-TW': `📊 您今天的 ${quotaResult.limit} 次免費識別已用完！
+
+升級到 Premium 享受：
+✨ 無限次食物識別
+📈 每日健康總結
+📊 高級數據分析
+
+輸入"升級"了解更多，或明天再來獲得 ${quotaResult.limit} 次免費識別！`,
+    };
+
+    await whatsappClient.sendTextMessage(
+      context.userId,
+      messages[context.language]
+    );
+  }
+
+  /**
+   * Send error response
+   */
+  private async sendErrorResponse(
+    context: MessageContext,
+    error?: { type: string; message: string; suggestion?: string }
+  ): Promise<void> {
+    if (!error) {
+      await this.sendGenericError(context);
+      return;
+    }
+
+    let message = `❌ ${error.message}`;
+    if (error.suggestion) {
+      message += `\n\n💡 ${error.suggestion}`;
+    }
+
+    await whatsappClient.sendTextMessage(context.userId, message);
+  }
+
+  /**
+   * Send generic error message
+   */
+  private async sendGenericError(context: MessageContext): Promise<void> {
+    const messages = {
+      'en': `❌ Oops! Something went wrong while analyzing your food.
+
+Please try again, or send a different photo.
+
+If the problem persists, type "help" for support.`,
+
+      'zh-CN': `❌ 哎呀！分析您的食物时出错了。
+
+请重试，或发送另一张照片。
+
+如果问题持续，输入"帮助"获取支持。`,
+
+      'zh-TW': `❌ 哎呀！分析您的食物時出錯了。
+
+請重試，或發送另一張照片。
+
+如果問題持續，輸入"幫助"獲取支持。`,
+    };
+
+    await whatsappClient.sendTextMessage(
+      context.userId,
+      messages[context.language]
+    );
+  }
+}
+
+// Singleton instance
+export const imageHandler = new ImageHandler();
