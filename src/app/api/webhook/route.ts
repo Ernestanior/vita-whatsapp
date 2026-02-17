@@ -84,6 +84,8 @@ export async function POST(request: NextRequest) {
       type: 'webhook_received',
       hasSignature: !!signature,
       bodyLength: rawBody.length,
+      headers: Object.fromEntries(request.headers.entries()),
+      body: rawBody.substring(0, 500), // Log first 500 chars
     });
 
     // Parse payload
@@ -94,6 +96,7 @@ export async function POST(request: NextRequest) {
       logger.error({
         type: 'webhook_invalid_json',
         error: error instanceof Error ? error.message : 'Unknown error',
+        rawBody: rawBody.substring(0, 200),
       });
       return NextResponse.json(
         { error: 'Invalid JSON payload' },
@@ -105,6 +108,7 @@ export async function POST(request: NextRequest) {
       type: 'webhook_payload_parsed',
       object: payload.object,
       entryCount: payload.entry?.length || 0,
+      payload: JSON.stringify(payload).substring(0, 500),
     });
 
     // Process webhook with signature verification
