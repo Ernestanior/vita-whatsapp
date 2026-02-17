@@ -133,10 +133,10 @@ export class WebhookHandler {
    * Handle messages change event
    */
   private async handleMessagesChange(value: any): Promise<void> {
-    // Add to debug logs FIRST
-    const { addLog } = await import('@/app/api/debug-logs/route');
-    
     try {
+      // Add to debug logs FIRST
+      const { addLog } = await import('@/app/api/debug-logs/route');
+      
       const { messages, contacts } = value;
 
       addLog({
@@ -168,6 +168,12 @@ export class WebhookHandler {
       // Get contact name if available
       const contactName = contacts?.[0]?.profile?.name;
 
+      logger.info({
+        type: 'about_to_process_messages_START',
+        messageCount: messages.length,
+        contactName,
+      });
+
       addLog({
         type: 'about_to_process_messages',
         messageCount: messages.length,
@@ -175,9 +181,20 @@ export class WebhookHandler {
         firstMessage: messages[0],
       });
 
+      logger.info({
+        type: 'entering_message_loop',
+        messageCount: messages.length,
+      });
+
       // Process each message with explicit try-catch
       for (let i = 0; i < messages.length; i++) {
         const message = messages[i];
+        
+        logger.info({
+          type: 'loop_iteration',
+          index: i,
+          messageId: message?.id,
+        });
         
         addLog({
           type: 'processing_message_loop',
@@ -188,7 +205,17 @@ export class WebhookHandler {
         });
         
         try {
+          logger.info({
+            type: 'calling_processMessage',
+            messageId: message?.id,
+          });
+          
           await this.processMessage(message, contactName);
+          
+          logger.info({
+            type: 'processMessage_completed',
+            messageId: message?.id,
+          });
           
           addLog({
             type: 'message_processed_in_loop',
@@ -196,6 +223,13 @@ export class WebhookHandler {
             messageId: message?.id,
           });
         } catch (error) {
+          logger.error({
+            type: 'processMessage_error',
+            messageId: message?.id,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : undefined,
+          });
+          
           addLog({
             type: 'message_loop_error',
             index: i,
@@ -204,25 +238,37 @@ export class WebhookHandler {
             stack: error instanceof Error ? error.stack : undefined,
           });
           
-          logger.error({
-            type: 'message_processing_error',
-            messageId: message.id,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
           // Continue processing other messages even if one fails
         }
       }
+
+      logger.info({
+        type: 'finished_all_messages',
+        totalProcessed: messages.length,
+      });
 
       addLog({
         type: 'finished_processing_all_messages',
         totalProcessed: messages.length,
       });
     } catch (error) {
-      addLog({
-        type: 'handleMessagesChange_error',
+      logger.error({
+        type: 'handleMessagesChange_FATAL_ERROR',
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
       });
+      
+      try {
+        const { addLog } = await import('@/app/api/debug-logs/route');
+        addLog({
+          type: 'handleMessagesChange_error',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+      } catch (logError) {
+        // Ignore logging errors
+      }
+      
       throw error;
     }
   }
