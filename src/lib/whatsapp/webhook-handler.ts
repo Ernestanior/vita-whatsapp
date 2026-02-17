@@ -185,6 +185,16 @@ export class WebhookHandler {
       messageType: message.type,
     });
 
+    // Add to debug logs
+    const { addLog } = await import('@/app/api/debug-logs/route');
+    addLog({
+      type: 'processing_message',
+      messageId: message.id,
+      from: message.from,
+      messageType: message.type,
+      message: message,
+    });
+
     try {
       // Mark message as read (non-blocking, ignore errors)
       logger.info({
@@ -239,14 +249,32 @@ export class WebhookHandler {
         context,
       });
 
+      addLog({
+        type: 'routing_to_handler',
+        messageId: message.id,
+        context,
+      });
+
       // Route message to appropriate handler
       await messageRouter.route(message, context);
+
+      addLog({
+        type: 'message_processed_successfully',
+        messageId: message.id,
+      });
 
       logger.info({
         type: 'message_processed_successfully',
         messageId: message.id,
       });
     } catch (error) {
+      addLog({
+        type: 'message_processing_error',
+        messageId: message.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
       logger.error({
         type: 'message_processing_error',
         messageId: message.id,
