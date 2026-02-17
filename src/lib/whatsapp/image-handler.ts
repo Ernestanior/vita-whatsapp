@@ -79,11 +79,17 @@ export class ImageHandler {
       }
 
       // 2. Check and increment quota atomically (prevents race conditions)
-      const quotaResult = await this.checkAndIncrementQuota(context.userId);
-      if (!quotaResult.allowed) {
-        await this.sendQuotaExceededMessage(context, quotaResult);
-        return;
-      }
+      // TEMPORARILY DISABLED FOR TESTING
+      // const quotaResult = await this.checkAndIncrementQuota(context.userId);
+      // if (!quotaResult.allowed) {
+      //   await this.sendQuotaExceededMessage(context, quotaResult);
+      //   return;
+      // }
+      
+      logger.info({
+        type: 'quota_check_disabled_for_testing',
+        userId: context.userId,
+      });
 
       // 4. Download image
       if (!message.image?.id) {

@@ -135,7 +135,21 @@ export class WebhookHandler {
   private async handleMessagesChange(value: any): Promise<void> {
     const { messages, contacts } = value;
 
+    // Add to debug logs
+    const { addLog } = await import('@/app/api/debug-logs/route');
+    addLog({
+      type: 'messages_change_received',
+      hasMessages: !!messages,
+      messageCount: messages?.length || 0,
+      hasContacts: !!contacts,
+      value: value,
+    });
+
     if (!messages || messages.length === 0) {
+      logger.warn({
+        type: 'no_messages_in_webhook',
+        value: JSON.stringify(value).substring(0, 500),
+      });
       return;
     }
 
