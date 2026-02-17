@@ -47,27 +47,51 @@ export class TextHandler {
     });
 
     try {
+      logger.info({
+        type: 'recognizing_command',
+        messageId: message.id,
+      });
+
       // Check if it's a command first (commands should work even during setup)
       const command = this.recognizeCommand(text);
       
+      logger.info({
+        type: 'command_recognized_result',
+        messageId: message.id,
+        command,
+      });
+
       // Allow certain commands to cancel setup flow
       if (command === Command.HELP || command === Command.START) {
+        logger.info({
+          type: 'checking_setup_flow',
+          messageId: message.id,
+          userId: context.userId,
+        });
+
         // Cancel any ongoing setup
-        if (profileManager.isInSetupFlow(context.userId)) {
+        if (await profileManager.isInSetupFlow(context.userId)) {
           logger.info({
             type: 'profile_setup_cancelled_by_command',
             userId: context.userId,
             command,
           });
           // Clear the setup session
-          profileManager.cancelSetup(context.userId);
+          await profileManager.cancelSetup(context.userId);
         }
+
+        logger.info({
+          type: 'handling_command',
+          messageId: message.id,
+          command,
+        });
+
         await this.handleCommand(command, message, context);
         return;
       }
       
       // Check if user is in profile setup flow
-      if (profileManager.isInSetupFlow(context.userId)) {
+      if (await profileManager.isInSetupFlow(context.userId)) {
         const setupComplete = await profileManager.processSetupInput(
           context.userId,
           text,
@@ -218,71 +242,73 @@ export class TextHandler {
         userId,
       });
 
-      // Check if user already has a profile
-      const hasProfile = await profileManager.hasProfile(userId);
+      // Send zero-input welcome message
+      const messages = {
+        'en': `👋 *Welcome to Vita AI!*
 
-      logger.info({
-        type: 'profile_check_result',
+I'm your personal nutrition assistant.
+
+🚀 *Get Started in 3 Seconds:*
+
+Just send me a photo of your food!
+📸 I'll analyze it instantly.
+
+No setup needed. I'll learn about you as we go.
+
+*Optional Quick Setup:*
+Want personalized advice now?
+Send: \`25 170 65\` (age height weight)
+
+Ready? Send your first food photo! 📸`,
+        
+        'zh-CN': `👋 *欢迎使用 Vita AI！*
+
+我是您的个人营养助手。
+
+🚀 *3秒开始使用：*
+
+直接发送食物照片！
+📸 我会立即分析。
+
+无需设置。我会在使用中了解您。
+
+*可选快速设置：*
+想要个性化建议？
+发送：\`25 170 65\`（年龄 身高 体重）
+
+准备好了吗？发送您的第一张食物照片！📸`,
+        
+        'zh-TW': `👋 *歡迎使用 Vita AI！*
+
+我是您的個人營養助手。
+
+🚀 *3秒開始使用：*
+
+直接發送食物照片！
+📸 我會立即分析。
+
+無需設置。我會在使用中了解您。
+
+*可選快速設置：*
+想要個性化建議？
+發送：\`25 170 65\`（年齡 身高 體重）
+
+準備好了嗎？發送您的第一張食物照片！📸`,
+      };
+
+      // Send message with minimal buttons
+      await whatsappClient.sendButtonMessage(
         userId,
-        hasProfile,
+        messages[context.language],
+        [
+          { id: 'help', title: '❓ Help' },
+        ]
+      );
+      
+      logger.info({
+        type: 'start_message_sent',
+        userId,
       });
-
-      if (hasProfile) {
-        // User already has profile, send welcome back message
-        const messages = {
-          'en': `👋 Welcome back to Vita AI!
-
-You're all set up. Send me a photo of your meal to get started!
-
-Commands:
-/profile - View your health profile
-/stats - View your statistics
-/help - Get help`,
-          
-          'zh-CN': `👋 欢迎回到 Vita AI！
-
-您已经设置完成。发送食物照片开始吧！
-
-命令：
-/profile - 查看健康画像
-/stats - 查看统计数据
-/help - 获取帮助`,
-          
-          'zh-TW': `👋 歡迎回到 Vita AI！
-
-您已經設置完成。發送食物照片開始吧！
-
-命令：
-/profile - 查看健康畫像
-/stats - 查看統計數據
-/help - 獲取幫助`,
-        };
-
-        logger.info({
-          type: 'sending_welcome_back_message',
-          userId,
-        });
-
-        await whatsappClient.sendTextMessage(userId, messages[context.language]);
-        
-        logger.info({
-          type: 'welcome_back_message_sent',
-          userId,
-        });
-      } else {
-        // Start profile setup
-        logger.info({
-          type: 'starting_profile_setup',
-          userId,
-        });
-        
-        await profileManager.initializeProfile(userId, context.language);
-        
-        logger.info({
-          type: 'profile_setup_initialized',
-          userId,
-        });
-      }
     } catch (error) {
       logger.error({
         type: 'start_command_error',
@@ -428,65 +454,43 @@ To update your profile, just tell me in natural language:
     const messages = {
       'en': `🤖 Vita AI Help
 
-*Available Commands:*
-/start - Get started and set up your profile
-/profile - View or update your health profile
-/stats - View your nutrition statistics
-/help - Show this help message
-/settings - Adjust your preferences
-
 *How to Use:*
 📸 Send a photo of your food to get instant nutrition analysis
-💬 Chat with me in natural language to update your profile
-🎯 Get personalized health recommendations based on your goals
+💬 Tell me about yourself to set up your profile
+🎯 Get personalized health recommendations
 
-*Supported Languages:*
-English, 简体中文, 繁體中文
-
-Need more help? Just ask me anything!`,
+*Quick Actions:*
+Use the buttons below to get started!`,
       
       'zh-CN': `🤖 Vita AI 帮助
 
-*可用命令：*
-/start - 开始使用并设置画像
-/profile - 查看或更新健康画像
-/stats - 查看营养统计
-/help - 显示此帮助信息
-/settings - 调整偏好设置
-
 *使用方法：*
 📸 发送食物照片获取即时营养分析
-💬 用自然语言与我聊天更新画像
-🎯 根据您的目标获得个性化健康建议
+💬 告诉我您的信息来设置画像
+🎯 获得个性化健康建议
 
-*支持语言：*
-English, 简体中文, 繁體中文
-
-需要更多帮助？随时问我！`,
+*快速操作：*
+使用下方按钮开始！`,
       
       'zh-TW': `🤖 Vita AI 幫助
 
-*可用命令：*
-/start - 開始使用並設置畫像
-/profile - 查看或更新健康畫像
-/stats - 查看營養統計
-/help - 顯示此幫助資訊
-/settings - 調整偏好設置
-
 *使用方法：*
 📸 發送食物照片獲取即時營養分析
-💬 用自然語言與我聊天更新畫像
-🎯 根據您的目標獲得個性化健康建議
+💬 告訴我您的信息來設置畫像
+🎯 獲得個性化健康建議
 
-*支持語言：*
-English, 简体中文, 繁體中文
-
-需要更多幫助？隨時問我！`,
+*快速操作：*
+使用下方按鈕開始！`,
     };
 
-    await whatsappClient.sendTextMessage(
+    await whatsappClient.sendButtonMessage(
       userId,
-      messages[context.language]
+      messages[context.language],
+      [
+        { id: 'start', title: '🚀 Get Started' },
+        { id: 'profile', title: '👤 My Profile' },
+        { id: 'stats', title: '📊 Statistics' },
+      ]
     );
   }
 
@@ -596,57 +600,314 @@ For now, I automatically detect your language from your messages.`,
       textLength: text.length,
     });
 
-    // TODO: Implement natural language understanding for profile updates
-    // For now, provide a helpful response
+    // Try to parse as quick setup: "age height weight"
+    const quickSetupMatch = text.trim().match(/^(\d{1,3})\s+(\d{2,3})\s+(\d{2,3})$/);
+    if (quickSetupMatch) {
+      const [, age, height, weight] = quickSetupMatch;
+      await this.handleQuickSetup(message.from, context, {
+        age: parseInt(age),
+        height: parseInt(height),
+        weight: parseInt(weight),
+      });
+      return;
+    }
 
+    // Default response for unrecognized input
     const messages = {
-      'en': `I understand you said: "${text}"
+      'en': `I'm not sure what you mean 🤔
 
-I'm still learning to understand natural language! For now, please use these commands:
-/start - Get started
-/help - See all commands
-📸 Or send a photo of your food for nutrition analysis`,
+Try these:
+• Send 3 numbers for quick setup: \`25 170 65\`
+• Send a food photo for analysis 📸
+• Click a button below for help`,
       
-      'zh-CN': `我收到您的消息："${text}"
+      'zh-CN': `我不太明白您的意思 🤔
 
-我还在学习理解自然语言！现在请使用这些命令：
-/start - 开始使用
-/help - 查看所有命令
-📸 或发送食物照片进行营养分析`,
+试试这些：
+• 发送 3 个数字快速设置：\`25 170 65\`
+• 发送食物照片进行分析 📸
+• 点击下方按钮获取帮助`,
       
-      'zh-TW': `我收到您的消息："${text}"
+      'zh-TW': `我不太明白您的意思 🤔
 
-我還在學習理解自然語言！現在請使用這些命令：
-/start - 開始使用
-/help - 查看所有命令
-📸 或發送食物照片進行營養分析`,
+試試這些：
+• 發送 3 個數字快速設置：\`25 170 65\`
+• 發送食物照片進行分析 📸
+• 點擊下方按鈕獲取幫助`,
+    };
+
+    await whatsappClient.sendButtonMessage(
+      message.from,
+      messages[context.language],
+      [
+        { id: 'start', title: '🚀 Get Started' },
+        { id: 'help', title: '❓ Help' },
+      ]
+    );
+  }
+
+  /**
+   * Handle quick setup with 3 numbers
+   */
+  /**
+     * Handle quick setup with 3 numbers
+     */
+    private async handleQuickSetup(
+      userId: string,
+      context: MessageContext,
+      data: { age: number; height: number; weight: number }
+    ): Promise<void> {
+      try {
+        logger.info({
+          type: 'quick_setup_processing',
+          userId,
+          data,
+        });
+
+        // Validate input
+        if (data.age < 10 || data.age > 120) {
+          await whatsappClient.sendTextMessage(
+            userId,
+            context.language === 'zh-CN' 
+              ? '年龄似乎不对，请重新输入（10-120岁）' 
+              : context.language === 'zh-TW'
+              ? '年齡似乎不對，請重新輸入（10-120歲）'
+              : 'Age seems incorrect, please try again (10-120 years)'
+          );
+          return;
+        }
+
+        if (data.height < 100 || data.height > 250) {
+          await whatsappClient.sendTextMessage(
+            userId,
+            context.language === 'zh-CN'
+              ? '身高似乎不对，请重新输入（100-250cm）'
+              : context.language === 'zh-TW'
+              ? '身高似乎不對，請重新輸入（100-250cm）'
+              : 'Height seems incorrect, please try again (100-250cm)'
+          );
+          return;
+        }
+
+        if (data.weight < 30 || data.weight > 300) {
+          await whatsappClient.sendTextMessage(
+            userId,
+            context.language === 'zh-CN'
+              ? '体重似乎不对，请重新输入（30-300kg）'
+              : context.language === 'zh-TW'
+              ? '體重似乎不對，請重新輸入（30-300kg）'
+              : 'Weight seems incorrect, please try again (30-300kg)'
+          );
+          return;
+        }
+
+        logger.info({
+          type: 'quick_setup_validation_passed',
+          userId,
+        });
+
+        // Calculate BMI
+        const bmi = data.weight / Math.pow(data.height / 100, 2);
+
+        // Smart defaults based on BMI and age
+        let goal: 'lose-weight' | 'gain-muscle' | 'maintain' = 'maintain';
+        if (bmi > 25) goal = 'lose-weight';
+        else if (bmi < 18.5) goal = 'gain-muscle';
+
+        const activityLevel = 'light'; // Default to light activity
+        const gender = 'male'; // Default, can be updated later
+
+        logger.info({
+          type: 'quick_setup_calculated_defaults',
+          userId,
+          bmi: bmi.toFixed(1),
+          goal,
+        });
+
+        // CRITICAL: Send confirmation message FIRST (user experience priority)
+        logger.info({
+          type: 'quick_setup_sending_confirmation_first',
+          userId,
+        });
+
+        const messages = {
+          'en': `✅ Profile Created!
+
+📊 Your Info:
+• Age: ${data.age} years
+• Height: ${data.height} cm
+• Weight: ${data.weight} kg
+• BMI: ${bmi.toFixed(1)}
+• Goal: ${goal === 'lose-weight' ? 'Lose Weight' : goal === 'gain-muscle' ? 'Gain Muscle' : 'Maintain Health'}
+
+🎉 You're all set! Send me a food photo to start tracking.`,
+
+          'zh-CN': `✅ 画像已创建！
+
+📊 您的信息：
+• 年龄：${data.age} 岁
+• 身高：${data.height} cm
+• 体重：${data.weight} kg
+• BMI：${bmi.toFixed(1)}
+• 目标：${goal === 'lose-weight' ? '减脂' : goal === 'gain-muscle' ? '增肌' : '维持健康'}
+
+🎉 设置完成！发送食物照片开始记录。`,
+
+          'zh-TW': `✅ 畫像已創建！
+
+📊 您的信息：
+• 年齡：${data.age} 歲
+• 身高：${data.height} cm
+• 體重：${data.weight} kg
+• BMI：${bmi.toFixed(1)}
+• 目標：${goal === 'lose-weight' ? '減脂' : goal === 'gain-muscle' ? '增肌' : '維持健康'}
+
+🎉 設置完成！發送食物照片開始記錄。`,
+        };
+
+        // Send message immediately
+        await whatsappClient.sendTextMessage(
+          userId,
+          messages[context.language]
+        );
+
+        logger.info({
+          type: 'quick_setup_confirmation_sent',
+          userId,
+        });
+
+        // Fire-and-forget database save (don't await, don't block)
+        // This prevents Vercel serverless timeout issues
+        this.saveProfileToDatabase(userId, context, data, gender, goal, activityLevel).catch(error => {
+          logger.error({
+            type: 'quick_setup_db_save_failed_background',
+            userId,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        });
+
+        logger.info({
+          type: 'quick_setup_completed',
+          userId,
+        });
+      } catch (error) {
+        logger.error({
+          type: 'quick_setup_error',
+          userId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+
+        // Always try to send error message to user
+        try {
+          await whatsappClient.sendTextMessage(
+            userId,
+            '❌ 设置失败，请重试。\n\nSetup failed, please try again.'
+          );
+        } catch (finalError) {
+          logger.error({
+            type: 'quick_setup_final_error_send_failed',
+            userId,
+            error: finalError instanceof Error ? finalError.message : 'Unknown error',
+          });
+        }
+      }
+    }
+
+  /**
+   * Save profile to database (fire-and-forget background operation)
+   */
+  private async saveProfileToDatabase(
+    userId: string,
+    context: MessageContext,
+    data: { age: number; height: number; weight: number },
+    gender: string,
+    goal: string,
+    activityLevel: string
+  ): Promise<void> {
+    logger.info({
+      type: 'quick_setup_saving_to_db',
+      userId,
+    });
+
+    const supabase = await (await import('@/lib/supabase/server')).createClient();
+    
+    // Step 1: Create or get user record (phone_number -> UUID)
+    logger.info({
+      type: 'quick_setup_creating_user',
+      userId,
+    });
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .upsert({
+        phone_number: userId,
+        whatsapp_name: context.userName || null,
+        language: context.language,
+      }, {
+        onConflict: 'phone_number',
+      })
+      .select('id')
+      .single();
+
+    if (userError || !user) {
+      logger.error({
+        type: 'quick_setup_user_creation_error',
+        userId,
+        error: userError?.message || 'No user returned',
+      });
+      throw new Error('Failed to create user');
+    }
+
+    logger.info({
+      type: 'quick_setup_user_created',
+      userId,
+      userUuid: user.id,
+    });
+
+    // Step 2: Save health profile with user UUID
+    const profileData = {
+      user_id: user.id,
+      height: data.height,
+      weight: data.weight,
+      age: data.age,
+      gender,
+      goal,
+      activity_level: activityLevel,
+      digest_time: '21:00:00',
+      quick_mode: false,
     };
 
     logger.info({
-      type: 'sending_natural_language_response',
-      messageId: message.id,
-      to: message.from,
-      language: context.language,
+      type: 'quick_setup_saving_profile',
+      userId,
+      userUuid: user.id,
+      profileData,
     });
 
-    try {
-      await whatsappClient.sendTextMessage(
-        message.from,
-        messages[context.language]
-      );
-      
-      logger.info({
-        type: 'natural_language_response_sent',
-        messageId: message.id,
+    const { error: profileError } = await supabase
+      .from('health_profiles')
+      .upsert(profileData, {
+        onConflict: 'user_id',
       });
-    } catch (error) {
+
+    if (profileError) {
       logger.error({
-        type: 'natural_language_response_error',
-        messageId: message.id,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        type: 'quick_setup_profile_save_error',
+        userId,
+        userUuid: user.id,
+        error: profileError.message,
+        errorCode: profileError.code,
+        errorDetails: JSON.stringify(profileError),
       });
-      throw error;
+      throw profileError;
     }
+
+    logger.info({
+      type: 'quick_setup_db_saved_successfully',
+      userId,
+      userUuid: user.id,
+    });
   }
 
   /**

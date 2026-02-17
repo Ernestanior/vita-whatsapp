@@ -187,21 +187,28 @@ export class WebhookHandler {
         // Don't throw, continue processing
       });
 
-      // Send initial acknowledgment (non-blocking)
-      logger.info({
-        type: 'sending_acknowledgment',
-        messageId: message.id,
-        messageType: message.type,
-      });
-      
-      this.sendAcknowledgment(message).catch(error => {
-        logger.warn({
-          type: 'acknowledgment_failed',
+      // CRITICAL: Send acknowledgment BEFORE routing (must succeed for images)
+      if (message.type === 'image') {
+        logger.info({
+          type: 'sending_critical_acknowledgment',
           messageId: message.id,
-          error: error instanceof Error ? error.message : 'Unknown error',
         });
-        // Don't throw, continue processing
-      });
+        
+        try {
+          await this.sendAcknowledgment(message);
+          logger.info({
+            type: 'acknowledgment_sent_successfully',
+            messageId: message.id,
+          });
+        } catch (ackError) {
+          logger.error({
+            type: 'critical_acknowledgment_failed',
+            messageId: message.id,
+            error: ackError instanceof Error ? ackError.message : 'Unknown error',
+          });
+          // Still try to process, but user won't know we received it
+        }
+      }
 
       // Create message context
       const context: MessageContext = {
@@ -232,6 +239,20 @@ export class WebhookHandler {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
       });
+      
+      // CRITICAL: Send error message to user
+      try {
+        await whatsappClient.sendTextMessage(
+          message.from,
+          '❌ 抱歉，处理您的消息时出错了。请重试或联系支持。\n\nSorry, an error occurred while processing your message. Please try again or contact support.'
+        );
+      } catch (errorSendError) {
+        logger.error({
+          type: 'error_notification_failed',
+          messageId: message.id,
+          error: errorSendError instanceof Error ? errorSendError.message : 'Unknown error',
+        });
+      }
       // Don't throw - we want to return 200 to WhatsApp
     }
   }

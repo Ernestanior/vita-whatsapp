@@ -2,9 +2,9 @@
  * InteractiveHandler - Handles interactive button replies
  * 
  * Handles quick reply buttons:
- * - Record: Confirm and keep the food record
- * - Modify: Allow user to modify the recognition result
- * - Ignore: Delete the food record
+ * - Navigation buttons (start, help, profile, stats)
+ * - Setup buttons (quick_setup, skip_setup)
+ * - Food record buttons (record, modify, ignore)
  * 
  * Requirements: 17.1, 17.2
  */
@@ -12,9 +12,12 @@
 import { logger } from '@/utils/logger';
 import { whatsappClient } from './client';
 import { createClient } from '@/lib/supabase/server';
+import { TextHandler } from './text-handler';
 import type { Message, MessageContext } from '@/types/whatsapp';
 
 export class InteractiveHandler {
+  private textHandler = new TextHandler();
+
   /**
    * Handle interactive button reply
    */
@@ -35,7 +38,36 @@ export class InteractiveHandler {
         buttonId,
       });
 
-      // Parse button ID: action_recordId
+      // Handle navigation buttons
+      if (['start', 'help', 'profile', 'stats', 'settings'].includes(buttonId)) {
+        // Simulate command message
+        const commandMessage: Message = {
+          ...message,
+          text: { body: `/${buttonId}` },
+          type: 'text',
+        };
+        await this.textHandler.handle(commandMessage, context);
+        return;
+      }
+
+      // Handle goal buttons (goal_1, goal_2, goal_3, goal_4)
+      if (buttonId.startsWith('goal_')) {
+        await this.handleGoalSelection(context, buttonId);
+        return;
+      }
+
+      // Handle setup buttons
+      if (buttonId === 'quick_setup') {
+        await this.handleQuickSetup(context);
+        return;
+      }
+
+      if (buttonId === 'skip_setup' || buttonId === 'skip_start' || buttonId === 'start_photo') {
+        await this.handleSkipSetup(context);
+        return;
+      }
+
+      // Parse button ID for food record actions: action_recordId
       const [action, recordId] = buttonId.split('_');
 
       if (!action || !recordId) {
@@ -46,7 +78,7 @@ export class InteractiveHandler {
         return;
       }
 
-      // Handle different actions
+      // Handle food record actions
       switch (action) {
         case 'record':
           await this.handleRecord(context, recordId);
@@ -76,6 +108,198 @@ export class InteractiveHandler {
 
       await this.sendError(context);
     }
+  }
+
+  /**
+   * Handle goal selection buttons
+   */
+  private async handleGoalSelection(
+    context: MessageContext,
+    buttonId: string
+  ): Promise<void> {
+    try {
+      // Map button ID to goal
+      const goalMap: Record<string, string> = {
+        'goal_1': 'lose-weight',
+        'goal_2': 'gain-muscle',
+        'goal_3': 'control-sugar',
+        'goal_4': 'maintain',
+      };
+
+      const goal = goalMap[buttonId];
+      if (!goal) {
+        logger.warn({
+          type: 'invalid_goal_button',
+          buttonId,
+        });
+        return;
+      }
+
+      // Update user profile with goal
+      const supabase = await createClient();
+      const { error } = await supabase
+        .from('health_profiles')
+        .update({ goal })
+        .eq('user_id', context.userId);
+
+      if (error) {
+        logger.error({
+          type: 'goal_update_error',
+          userId: context.userId,
+          error: error.message,
+        });
+        throw error;
+      }
+
+      const goalNames = {
+        'en': {
+          'lose-weight': 'Lose Weight',
+          'gain-muscle': 'Gain Muscle',
+          'control-sugar': 'Control Blood Sugar',
+          'maintain': 'Maintain Health',
+        },
+        'zh-CN': {
+          'lose-weight': '减脂',
+          'gain-muscle': '增肌',
+          'control-sugar': '控糖',
+          'maintain': '维持健康',
+        },
+        'zh-TW': {
+          'lose-weight': '減脂',
+          'gain-muscle': '增肌',
+          'control-sugar': '控糖',
+          'maintain': '維持健康',
+        },
+      };
+
+      const messages = {
+        'en': `✅ Goal updated to: ${goalNames['en'][goal as keyof typeof goalNames['en']]}
+
+I'll now tailor my recommendations to help you achieve this goal!
+
+Keep sending food photos and I'll guide you. 💪`,
+
+        'zh-CN': `✅ 目标已更新为：${goalNames['zh-CN'][goal as keyof typeof goalNames['zh-CN']]}
+
+我现在会根据这个目标为您定制建议！
+
+继续发送食物照片，我会指导您。💪`,
+
+        'zh-TW': `✅ 目標已更新為：${goalNames['zh-TW'][goal as keyof typeof goalNames['zh-TW']]}
+
+我現在會根據這個目標為您定制建議！
+
+繼續發送食物照片，我會指導您。💪`,
+      };
+
+      await whatsappClient.sendTextMessage(
+        context.userId,
+        messages[context.language]
+      );
+
+      logger.info({
+        type: 'goal_updated',
+        userId: context.userId,
+        goal,
+      });
+    } catch (error) {
+      logger.error({
+        type: 'goal_selection_error',
+        userId: context.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      await this.sendError(context);
+    }
+  }
+
+  /**
+   * Handle quick setup button
+   */
+  private async handleQuickSetup(context: MessageContext): Promise<void> {
+    const messages = {
+      'en': `📝 Quick Setup
+
+Please tell me about yourself in ONE message with this format:
+
+"I'm [age] years old, [height]cm tall, [weight]kg, [gender], goal: [lose weight/gain muscle/control sugar/maintain], activity: [sedentary/light/moderate/active]"
+
+Example:
+"I'm 25 years old, 170cm tall, 65kg, male, goal: lose weight, activity: moderate"`,
+      
+      'zh-CN': `📝 快速设置
+
+请用一条消息告诉我您的信息，格式如下：
+
+"我[年龄]岁，身高[height]cm，体重[weight]kg，[性别]，目标：[减脂/增肌/控糖/维持]，活动：[久坐/轻度/中度/高度]"
+
+例如：
+"我25岁，身高170cm，体重65kg，男，目标：减脂，活动：中度"`,
+      
+      'zh-TW': `📝 快速設置
+
+請用一條消息告訴我您的信息，格式如下：
+
+"我[年齡]歲，身高[height]cm，體重[weight]kg，[性別]，目標：[減脂/增肌/控糖/維持]，活動：[久坐/輕度/中度/高度]"
+
+例如：
+"我25歲，身高170cm，體重65kg，男，目標：減脂，活動：中度"`,
+    };
+
+    await whatsappClient.sendTextMessage(
+      context.userId,
+      messages[context.language]
+    );
+  }
+
+  /**
+   * Handle skip setup button
+   */
+  private async handleSkipSetup(context: MessageContext): Promise<void> {
+    const messages = {
+      'en': `📸 *Let's Start!*
+
+No problem! You can set up your profile anytime.
+
+Just send me a photo of your food and I'll analyze it for you.
+
+Tips:
+• Take clear photos in good lighting
+• Include the whole meal
+• I can recognize 1000+ foods
+
+Ready? Send your first food photo! 📸`,
+      
+      'zh-CN': `📸 *开始使用！*
+
+没问题！您随时可以设置画像。
+
+只需发送食物照片，我就会为您分析。
+
+小贴士：
+• 在光线充足的地方拍摄清晰照片
+• 拍摄完整的餐食
+• 我能识别 1000+ 种食物
+
+准备好了吗？发送您的第一张食物照片！📸`,
+      
+      'zh-TW': `📸 *開始使用！*
+
+沒問題！您隨時可以設置畫像。
+
+只需發送食物照片，我就會為您分析。
+
+小貼士：
+• 在光線充足的地方拍攝清晰照片
+• 拍攝完整的餐食
+• 我能識別 1000+ 種食物
+
+準備好了嗎？發送您的第一張食物照片！📸`,
+    };
+
+    await whatsappClient.sendTextMessage(
+      context.userId,
+      messages[context.language]
+    );
   }
 
   /**

@@ -50,6 +50,12 @@ export class MessageRouter {
           await interactiveHandler.handle(message, context);
           break;
 
+        case 'audio':
+        case 'voice':
+          // Handle voice messages - for now, prompt user to use text
+          await this.handleVoiceMessage(message, context);
+          break;
+
         default:
           logger.warn({
             type: 'unknown_message_type',
@@ -66,6 +72,61 @@ export class MessageRouter {
       });
       throw error;
     }
+  }
+
+  /**
+   * Handle voice/audio messages
+   */
+  private async handleVoiceMessage(
+    message: Message,
+    context: MessageContext
+  ): Promise<void> {
+    const messages = {
+      'en': `🎤 Voice message received!
+
+I can't process voice messages yet, but you can:
+
+📝 Type: \`25 170 65\`
+(age height weight)
+
+Or
+
+📸 Send a food photo to start
+
+Coming soon: Voice recognition! 🚀`,
+      
+      'zh-CN': `🎤 收到语音消息！
+
+我暂时还不能处理语音消息，但您可以：
+
+📝 输入：\`25 170 65\`
+（年龄 身高 体重）
+
+或者
+
+📸 发送食物照片开始
+
+即将推出：语音识别！🚀`,
+      
+      'zh-TW': `🎤 收到語音消息！
+
+我暫時還不能處理語音消息，但您可以：
+
+📝 輸入：\`25 170 65\`
+（年齡 身高 體重）
+
+或者
+
+📸 發送食物照片開始
+
+即將推出：語音識別！🚀`,
+    };
+
+    const { whatsappClient } = await import('./client');
+    await whatsappClient.sendTextMessage(
+      context.userId,
+      messages[context.language]
+    );
   }
 
   /**

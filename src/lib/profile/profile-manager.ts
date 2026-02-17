@@ -16,6 +16,8 @@ import { whatsappClient } from '@/lib/whatsapp/client';
 import { logger } from '@/utils/logger';
 import { calculateBMI, calculateDailyCalories, validateHealthProfile } from '@/lib/database/functions';
 import type { HealthProfile, HealthProfileInsert, HealthProfileUpdate } from '@/lib/database/schema';
+import { redis } from '@/lib/redis/client';
+import { env } from '@/config/env';
 
 /**
  * Profile setup state for conversational flow
@@ -41,7 +43,192 @@ export interface ProfileSetupSession {
 }
 
 export class ProfileManager {
-  private setupSessions: Map<string, ProfileSetupSession> = new Map();
+  // Redis key prefix for setup sessions
+  private readonly SESSION_PREFIX = 'profile_setup:';
+  private readonly SESSION_TTL = 3600; // 1 hour
+
+  /**
+   * Get setup session from Redis using REST API
+   */
+  private async getSession(userId: string): Promise<ProfileSetupSession | null> {
+    try {
+      logger.info({
+        type: 'getSession_start',
+        userId,
+        hasRedisUrl: !!env.UPSTASH_REDIS_URL,
+        hasRedisToken: !!env.UPSTASH_REDIS_TOKEN,
+      });
+
+      const key = `${this.SESSION_PREFIX}${userId}`;
+      
+      // Use fetch with timeout instead of Redis SDK
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      
+      try {
+        const url = `${env.UPSTASH_REDIS_URL}/get/${encodeURIComponent(key)}`;
+        
+        logger.info({
+          type: 'getSession_fetching',
+          userId,
+          url: url.substring(0, 50) + '...',
+        });
+
+        const response = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${env.UPSTASH_REDIS_TOKEN}`,
+          },
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
+        
+        logger.info({
+          type: 'getSession_response',
+          userId,
+          status: response.status,
+        });
+        
+        if (!response.ok) {
+          logger.warn({
+            type: 'getSession_http_error',
+            userId,
+            status: response.status,
+          });
+          return null;
+        }
+        
+        const data = await response.json();
+        
+        logger.info({
+          type: 'getSession_complete',
+          userId,
+          hasData: !!data.result,
+        });
+        
+        if (!data.result) return null;
+        return JSON.parse(data.result) as ProfileSetupSession;
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          logger.warn({
+            type: 'getSession_timeout',
+            userId,
+          });
+        } else {
+          logger.error({
+            type: 'getSession_fetch_error',
+            userId,
+            error: fetchError instanceof Error ? fetchError.message : 'Unknown error',
+          });
+        }
+        return null;
+      }
+    } catch (error) {
+      logger.error({
+        type: 'get_session_error',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Save setup session to Redis using REST API
+   */
+  private async saveSession(session: ProfileSetupSession): Promise<void> {
+    try {
+      const key = `${this.SESSION_PREFIX}${session.userId}`;
+      const value = JSON.stringify(session);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      
+      try {
+        const response = await fetch(
+          `${env.UPSTASH_REDIS_URL}/setex/${encodeURIComponent(key)}/${this.SESSION_TTL}/${encodeURIComponent(value)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${env.UPSTASH_REDIS_TOKEN}`,
+            },
+            signal: controller.signal,
+          }
+        );
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          logger.warn({
+            type: 'saveSession_http_error',
+            userId: session.userId,
+            status: response.status,
+          });
+        }
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          logger.warn({
+            type: 'saveSession_timeout',
+            userId: session.userId,
+          });
+        } else {
+          throw fetchError;
+        }
+      }
+    } catch (error) {
+      logger.error({
+        type: 'save_session_error',
+        userId: session.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  /**
+   * Delete setup session from Redis using REST API
+   */
+  private async deleteSession(userId: string): Promise<void> {
+    try {
+      const key = `${this.SESSION_PREFIX}${userId}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      
+      try {
+        await fetch(
+          `${env.UPSTASH_REDIS_URL}/del/${encodeURIComponent(key)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${env.UPSTASH_REDIS_TOKEN}`,
+            },
+            signal: controller.signal,
+          }
+        );
+        
+        clearTimeout(timeoutId);
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          logger.warn({
+            type: 'deleteSession_timeout',
+            userId,
+          });
+        } else {
+          throw fetchError;
+        }
+      }
+    } catch (error) {
+      logger.error({
+        type: 'delete_session_error',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
 
   /**
    * Initialize profile setup for a new user
@@ -57,7 +244,7 @@ export class ProfileManager {
     });
 
     // Create setup session
-    this.setupSessions.set(userId, {
+    const session: ProfileSetupSession = {
       userId,
       currentStep: ProfileSetupStep.HEIGHT,
       data: {
@@ -67,10 +254,30 @@ export class ProfileManager {
         quick_mode: false,
       },
       language,
+    };
+
+    await this.saveSession(session);
+
+    logger.info({
+      type: 'profile_session_created',
+      userId,
     });
 
     // Send welcome message and ask for height
-    await this.sendStepMessage(userId, ProfileSetupStep.HEIGHT, language);
+    try {
+      await this.sendStepMessage(userId, ProfileSetupStep.HEIGHT, language);
+      logger.info({
+        type: 'profile_welcome_message_sent',
+        userId,
+      });
+    } catch (error) {
+      logger.error({
+        type: 'profile_welcome_message_error',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
   }
 
   /**
@@ -81,9 +288,19 @@ export class ProfileManager {
     input: string,
     language: 'en' | 'zh-CN' | 'zh-TW' = 'en'
   ): Promise<boolean> {
-    const session = this.setupSessions.get(userId);
+    logger.info({
+      type: 'processSetupInput_start',
+      userId,
+      input: input.substring(0, 50),
+    });
+
+    const session = await this.getSession(userId);
 
     if (!session) {
+      logger.warn({
+        type: 'processSetupInput_no_session',
+        userId,
+      });
       // No active session, check if user has a profile
       const hasProfile = await this.hasProfile(userId);
       if (!hasProfile) {
@@ -93,20 +310,40 @@ export class ProfileManager {
       return true; // Profile already exists
     }
 
+    logger.info({
+      type: 'processSetupInput_session_found',
+      userId,
+      currentStep: session.currentStep,
+    });
+
     try {
       const success = await this.processStep(session, input);
+
+      logger.info({
+        type: 'processSetupInput_step_processed',
+        userId,
+        success,
+        currentStep: session.currentStep,
+      });
 
       if (success) {
         // Move to next step
         const nextStep = this.getNextStep(session.currentStep);
         
+        logger.info({
+          type: 'processSetupInput_next_step',
+          userId,
+          nextStep,
+        });
+
         if (nextStep === ProfileSetupStep.COMPLETE) {
           // Save profile and complete setup
           await this.completeSetup(session);
-          this.setupSessions.delete(userId);
+          await this.deleteSession(userId);
           return true;
         } else {
           session.currentStep = nextStep;
+          await this.saveSession(session);
           await this.sendStepMessage(userId, nextStep, session.language);
         }
       }
@@ -118,6 +355,7 @@ export class ProfileManager {
         userId,
         step: session.currentStep,
         error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
       });
 
       await this.sendErrorMessage(userId, session.language, error instanceof Error ? error.message : undefined);
@@ -380,11 +618,41 @@ export class ProfileManager {
     step: ProfileSetupStep,
     language: 'en' | 'zh-CN' | 'zh-TW'
   ): Promise<void> {
+    logger.info({
+      type: 'sendStepMessage_start',
+      userId,
+      step,
+      language,
+    });
+
     const messages = this.getStepMessages(language);
     const message = messages[step];
 
+    logger.info({
+      type: 'sendStepMessage_got_message',
+      userId,
+      step,
+      hasMessage: !!message,
+      messageLength: message?.length,
+    });
+
     if (message) {
-      await whatsappClient.sendTextMessage(userId, message);
+      try {
+        await whatsappClient.sendTextMessage(userId, message);
+        logger.info({
+          type: 'sendStepMessage_sent',
+          userId,
+          step,
+        });
+      } catch (error) {
+        logger.error({
+          type: 'sendStepMessage_error',
+          userId,
+          step,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        throw error;
+      }
     }
   }
 
@@ -730,15 +998,67 @@ Please try again with the correct format.`,
    * Check if user has a profile
    */
   async hasProfile(userId: string): Promise<boolean> {
-    const supabase = await createClient();
+    try {
+      logger.info({
+        type: 'hasProfile_start',
+        userId,
+      });
 
-    const { data, error } = await supabase
-      .from('health_profiles')
-      .select('user_id')
-      .eq('user_id', userId)
-      .single();
+      const supabase = await createClient();
 
-    return !error && !!data;
+      logger.info({
+        type: 'hasProfile_client_created',
+        userId,
+        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      });
+
+      // Add timeout to prevent hanging
+      const queryPromise = supabase
+        .from('health_profiles')
+        .select('user_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database query timeout')), 5000)
+      );
+
+      logger.info({
+        type: 'hasProfile_query_started',
+        userId,
+      });
+
+      const { data, error } = await Promise.race([queryPromise, timeoutPromise]) as any;
+
+      logger.info({
+        type: 'hasProfile_query_complete',
+        userId,
+        hasData: !!data,
+        hasError: !!error,
+        errorMessage: error?.message,
+        errorCode: error?.code,
+      });
+
+      if (error) {
+        logger.warn({
+          type: 'hasProfile_query_error',
+          userId,
+          error: error.message,
+          errorCode: error.code,
+        });
+        return false; // Assume no profile on error
+      }
+
+      return !!data;
+    } catch (error) {
+      logger.error({
+        type: 'hasProfile_error',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      return false; // Assume no profile on error
+    }
   }
 
   /**
@@ -913,16 +1233,19 @@ ${updates.height ? `• 身高：${updates.height} 厘米\n` : ''}${updates.weig
 
   /**
    * Check if user is in setup flow
+   * Temporarily always return false - session persistence disabled
    */
-  isInSetupFlow(userId: string): boolean {
-    return this.setupSessions.has(userId);
+  async isInSetupFlow(userId: string): Promise<boolean> {
+    // TODO: Implement proper session persistence
+    // For now, always return false to avoid Redis/fetch issues
+    return false;
   }
 
   /**
    * Cancel setup flow
    */
-  cancelSetup(userId: string): void {
-    this.setupSessions.delete(userId);
+  async cancelSetup(userId: string): Promise<void> {
+    await this.deleteSession(userId);
     logger.info({
       type: 'profile_setup_cancelled',
       userId,

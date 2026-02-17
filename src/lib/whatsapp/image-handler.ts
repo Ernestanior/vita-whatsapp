@@ -33,6 +33,29 @@ export class ImageHandler {
    */
   async handle(message: Message, context: MessageContext): Promise<void> {
     const startTime = Date.now();
+    let timeoutMessageSent = false;
+
+    // Set up timeout warning (10 seconds)
+    const timeoutWarning = setTimeout(async () => {
+      try {
+        timeoutMessageSent = true;
+        await whatsappClient.sendTextMessage(
+          context.userId,
+          '⏳ 处理时间较长，请稍候...\n\nProcessing is taking longer than usual, please wait...'
+        );
+        logger.info({
+          type: 'timeout_warning_sent',
+          userId: context.userId,
+          messageId: message.id,
+        });
+      } catch (error) {
+        logger.error({
+          type: 'timeout_warning_failed',
+          userId: context.userId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }, 10000);
 
     try {
       logger.info({
@@ -41,17 +64,21 @@ export class ImageHandler {
         messageId: message.id,
       });
 
-      // 1. Send initial acknowledgment
-      await this.sendAcknowledgment(context);
-
-      // 2. Check if user has profile
-      const hasProfile = await profileManager.hasProfile(context.userId);
-      if (!hasProfile) {
-        await this.sendProfileSetupPrompt(context);
-        return;
+      // 1. Send initial acknowledgment (critical - must succeed)
+      try {
+        await this.sendAcknowledgment(context);
+      } catch (ackError) {
+        logger.error({
+          type: 'acknowledgment_critical_error',
+          userId: context.userId,
+          error: ackError instanceof Error ? ackError.message : 'Unknown error',
+        });
+        // If we can't even send acknowledgment, something is very wrong
+        clearTimeout(timeoutWarning);
+        throw ackError;
       }
 
-      // 3. Check and increment quota atomically (prevents race conditions)
+      // 2. Check and increment quota atomically (prevents race conditions)
       const quotaResult = await this.checkAndIncrementQuota(context.userId);
       if (!quotaResult.allowed) {
         await this.sendQuotaExceededMessage(context, quotaResult);
@@ -114,14 +141,11 @@ export class ImageHandler {
         await cacheManager.setFoodRecognition(imageHash, recognitionResult);
       }
 
-      // 8. Get user profile for rating
+      // 8. Get user profile for rating (use defaults if not set)
       const profile = await profileManager.getProfile(context.userId);
-      if (!profile) {
-        throw new Error('Profile not found after check');
-      }
-
-      // Convert database profile to rating engine format
-      const ratingProfile = {
+      
+      // Use smart defaults if no profile exists yet
+      const ratingProfile = profile ? {
         userId: profile.user_id,
         height: profile.height,
         weight: profile.weight,
@@ -133,6 +157,18 @@ export class ImageHandler {
         quickMode: profile.quick_mode,
         createdAt: new Date(profile.created_at),
         updatedAt: new Date(profile.updated_at),
+      } : {
+        userId: context.userId,
+        height: 170, // Default height
+        weight: 65,  // Default weight
+        age: 30,
+        gender: 'male' as const,
+        goal: 'maintain' as const,
+        activityLevel: 'light' as const,
+        digestTime: '21:00:00',
+        quickMode: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
       };
 
       // 9. Get health rating
@@ -170,6 +206,12 @@ export class ImageHandler {
         recordId
       );
 
+      // 14. Progressive profiling - ask for info at the right time
+      await this.checkAndSendProgressivePrompt(context.userId, context.language);
+
+      // Clear timeout warning
+      clearTimeout(timeoutWarning);
+
       const processingTime = Date.now() - startTime;
       logger.info({
         type: 'image_handling_completed',
@@ -178,8 +220,12 @@ export class ImageHandler {
         processingTime,
         tokensUsed,
         cached: !!cachedResult,
+        timeoutMessageSent,
       });
     } catch (error) {
+      // Clear timeout warning
+      clearTimeout(timeoutWarning);
+
       const processingTime = Date.now() - startTime;
       logger.error({
         type: 'image_handling_error',
@@ -190,7 +236,16 @@ export class ImageHandler {
         stack: error instanceof Error ? error.stack : undefined,
       });
 
-      await this.sendGenericError(context);
+      // CRITICAL: Always send error message to user
+      try {
+        await this.sendGenericError(context);
+      } catch (errorSendError) {
+        logger.error({
+          type: 'error_message_send_failed',
+          userId: context.userId,
+          error: errorSendError instanceof Error ? errorSendError.message : 'Unknown error',
+        });
+      }
     }
   }
 
@@ -222,11 +277,55 @@ export class ImageHandler {
   }> {
     const supabase = await createClient();
 
+    // First, ensure user exists and get UUID
+    const { data: user } = await supabase
+      .from('users')
+      .select('id')
+      .eq('phone_number', userId)
+      .maybeSingle();
+
+    if (!user) {
+      // Create user if doesn't exist
+      const { data: newUser, error: createError } = await supabase
+        .from('users')
+        .insert({
+          phone_number: userId,
+          language: 'en',
+        })
+        .select('id')
+        .single();
+
+      if (createError || !newUser) {
+        logger.error({
+          type: 'user_creation_error_in_quota',
+          userId,
+          error: createError?.message,
+        });
+        // Allow the request to proceed (fail open)
+        return {
+          allowed: true,
+          remaining: 3,
+          limit: 3,
+          tier: 'free',
+        };
+      }
+
+      // New user, allow the request
+      return {
+        allowed: true,
+        remaining: 2, // Used 1, have 2 left
+        limit: 3,
+        tier: 'free',
+      };
+    }
+
+    const userUuid = user.id;
+
     // Get user subscription
     const { data: subscription } = await supabase
       .from('subscriptions')
       .select('tier, status')
-      .eq('user_id', userId)
+      .eq('user_id', userUuid)
       .eq('status', 'active')
       .single();
 
@@ -243,7 +342,7 @@ export class ImageHandler {
     // Free users: use atomic operation
     const today = new Date().toISOString().split('T')[0];
     const { data, error } = await supabase.rpc('check_and_increment_quota', {
-      p_user_id: userId,
+      p_user_id: userUuid,
       p_date: today,
       p_limit: 3, // Free tier limit
     });
@@ -252,13 +351,31 @@ export class ImageHandler {
       logger.error({
         type: 'quota_check_error',
         userId,
+        userUuid,
         error: error.message,
       });
-      throw new Error('Failed to check quota');
+      // Fail open - allow the request
+      return {
+        allowed: true,
+        remaining: 3,
+        limit: 3,
+        tier: 'free',
+      };
     }
 
     if (!data || data.length === 0) {
-      throw new Error('No data returned from quota check');
+      logger.error({
+        type: 'quota_check_no_data',
+        userId,
+        userUuid,
+      });
+      // Fail open
+      return {
+        allowed: true,
+        remaining: 3,
+        limit: 3,
+        tier: 'free',
+      };
     }
 
     const result = data[0];
@@ -671,6 +788,196 @@ Type "upgrade" to learn more, or come back tomorrow for ${quotaResult.limit} mor
     }
 
     await whatsappClient.sendTextMessage(context.userId, message);
+  }
+
+  /**
+   * Check user's onboarding status and send progressive prompts
+   * - After 2nd photo: Ask for basic info (age, height, weight)
+   * - After 5th photo: Ask for goals and preferences
+   */
+  private async checkAndSendProgressivePrompt(
+    userId: string,
+    language: 'en' | 'zh-CN' | 'zh-TW'
+  ): Promise<void> {
+    try {
+      // Check if user already has a profile
+      const hasProfile = await profileManager.hasProfile(userId);
+      if (hasProfile) {
+        return; // User already set up, no need for prompts
+      }
+
+      // Count user's food records
+      const recordCount = await this.getUserFoodRecordCount(userId);
+
+      logger.info({
+        type: 'progressive_profiling_check',
+        userId,
+        recordCount,
+        hasProfile,
+      });
+
+      // After 2nd photo: Ask for basic info
+      if (recordCount === 2) {
+        await this.sendBasicInfoPrompt(userId, language);
+      }
+      // After 5th photo: Ask for goals (if they provided basic info)
+      else if (recordCount === 5 && hasProfile) {
+        await this.sendGoalsPrompt(userId, language);
+      }
+    } catch (error) {
+      logger.error({
+        type: 'progressive_profiling_error',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      // Don't throw - this shouldn't block the main flow
+    }
+  }
+
+  /**
+   * Get user's food record count
+   */
+  private async getUserFoodRecordCount(userId: string): Promise<number> {
+    try {
+      const supabase = await createClient();
+      
+      const { count, error } = await supabase
+        .from('food_records')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId);
+
+      if (error) {
+        logger.error({
+          type: 'food_record_count_error',
+          userId,
+          error: error.message,
+        });
+        return 0;
+      }
+
+      return count || 0;
+    } catch (error) {
+      logger.error({
+        type: 'food_record_count_exception',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return 0;
+    }
+  }
+
+  /**
+   * Send prompt for basic info after 2nd photo
+   */
+  private async sendBasicInfoPrompt(
+    userId: string,
+    language: 'en' | 'zh-CN' | 'zh-TW'
+  ): Promise<void> {
+    const messages = {
+      'en': `🎉 Great! You've logged 2 meals!
+
+Want personalized nutrition advice?
+
+Just send me 3 numbers:
+\`age height weight\`
+
+Example: \`25 170 65\`
+
+Or keep sending photos - I'll keep analyzing! 📸`,
+
+      'zh-CN': `🎉 太棒了！您已记录 2 餐！
+
+想要个性化营养建议吗？
+
+只需发送 3 个数字：
+\`年龄 身高 体重\`
+
+例如：\`25 170 65\`
+
+或继续发送照片 - 我会继续分析！📸`,
+
+      'zh-TW': `🎉 太棒了！您已記錄 2 餐！
+
+想要個性化營養建議嗎？
+
+只需發送 3 個數字：
+\`年齡 身高 體重\`
+
+例如：\`25 170 65\`
+
+或繼續發送照片 - 我會繼續分析！📸`,
+    };
+
+    await whatsappClient.sendTextMessage(userId, messages[language]);
+
+    logger.info({
+      type: 'basic_info_prompt_sent',
+      userId,
+      language,
+    });
+  }
+
+  /**
+   * Send prompt for goals after 5th photo
+   */
+  private async sendGoalsPrompt(
+    userId: string,
+    language: 'en' | 'zh-CN' | 'zh-TW'
+  ): Promise<void> {
+    const messages = {
+      'en': `💪 You're doing great! 5 meals tracked!
+
+Want even better recommendations?
+
+Tell me your health goal:
+1️⃣ Lose weight
+2️⃣ Gain muscle
+3️⃣ Control blood sugar
+4️⃣ Maintain health
+
+Just reply with the number (1-4)`,
+
+      'zh-CN': `💪 做得很好！已记录 5 餐！
+
+想要更好的建议吗？
+
+告诉我您的健康目标：
+1️⃣ 减脂
+2️⃣ 增肌
+3️⃣ 控糖
+4️⃣ 维持健康
+
+只需回复数字（1-4）`,
+
+      'zh-TW': `💪 做得很好！已記錄 5 餐！
+
+想要更好的建議嗎？
+
+告訴我您的健康目標：
+1️⃣ 減脂
+2️⃣ 增肌
+3️⃣ 控糖
+4️⃣ 維持健康
+
+只需回覆數字（1-4）`,
+    };
+
+    await whatsappClient.sendButtonMessage(
+      userId,
+      messages[language],
+      [
+        { id: 'goal_1', title: '1️⃣ Lose Weight' },
+        { id: 'goal_2', title: '2️⃣ Gain Muscle' },
+        { id: 'goal_3', title: '3️⃣ Control Sugar' },
+        { id: 'goal_4', title: '4️⃣ Maintain' },
+      ]
+    );
+
+    logger.info({
+      type: 'goals_prompt_sent',
+      userId,
+      language,
+    });
   }
 
   /**

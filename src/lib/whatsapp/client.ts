@@ -72,32 +72,54 @@ export class WhatsAppClient {
   ): Promise<SendMessageResponse> {
     const url = `${WHATSAPP_API_URL}/${this.phoneNumberId}/messages`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.token}`,
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to,
-        type: 'text',
-        text: { body: text },
-      }),
-    });
+    // Add timeout to fetch
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-    if (!response.ok) {
-      const error = await response.text();
-      logger.error({
-        type: 'whatsapp_send_message_error',
-        to,
-        error,
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.token}`,
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to,
+          type: 'text',
+          text: { body: text },
+        }),
+        signal: controller.signal,
       });
-      throw new Error(`Failed to send message: ${error}`);
-    }
 
-    return response.json();
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const error = await response.text();
+        logger.error({
+          type: 'whatsapp_send_message_error',
+          to,
+          error,
+        });
+        throw new Error(`Failed to send message: ${error}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        logger.error({
+          type: 'whatsapp_send_message_timeout',
+          to,
+          textLength: text.length,
+        });
+        throw new Error('WhatsApp API timeout');
+      }
+      
+      throw error;
+    }
   }
 
   /**
@@ -110,44 +132,67 @@ export class WhatsAppClient {
   ): Promise<SendMessageResponse> {
     const url = `${WHATSAPP_API_URL}/${this.phoneNumberId}/messages`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.token}`,
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to,
-        type: 'interactive',
-        interactive: {
-          type: 'button',
-          body: { text },
-          action: {
-            buttons: buttons.map(btn => ({
-              type: 'reply',
-              reply: {
-                id: btn.id,
-                title: btn.title,
-              },
-            })),
-          },
+    // Add timeout to fetch
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.token}`,
         },
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      logger.error({
-        type: 'whatsapp_send_button_message_error',
-        to,
-        error,
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to,
+          type: 'interactive',
+          interactive: {
+            type: 'button',
+            body: { text },
+            action: {
+              buttons: buttons.map(btn => ({
+                type: 'reply',
+                reply: {
+                  id: btn.id,
+                  title: btn.title,
+                },
+              })),
+            },
+          },
+        }),
+        signal: controller.signal,
       });
-      throw new Error(`Failed to send button message: ${error}`);
-    }
 
-    return response.json();
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const error = await response.text();
+        logger.error({
+          type: 'whatsapp_send_button_message_error',
+          to,
+          error,
+        });
+        throw new Error(`Failed to send button message: ${error}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        logger.error({
+          type: 'whatsapp_send_button_message_timeout',
+          to,
+          textLength: text.length,
+          buttonCount: buttons.length,
+        });
+        throw new Error('WhatsApp API timeout');
+      }
+      
+      throw error;
+    }
   }
 
   /**

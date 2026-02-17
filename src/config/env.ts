@@ -54,8 +54,12 @@ const envSchema = z.object({
   
   // App Config
   NEXT_PUBLIC_URL: z.string().url('Invalid app URL'),
+  NEXT_PUBLIC_APP_URL: z.string().url('Invalid app URL').optional(),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  
+  // Testing
+  TEST_WHATSAPP_NUMBER: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -77,3 +81,8 @@ function validateEnv(): Env {
 }
 
 export const env = validateEnv();
+
+// Convenience aliases
+export const SUPABASE_URL = env.NEXT_PUBLIC_SUPABASE_URL;
+export const SUPABASE_ANON_KEY = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+export const SUPABASE_SERVICE_KEY = env.SUPABASE_SERVICE_KEY;
