@@ -135,17 +135,39 @@ export async function POST(request: NextRequest) {
       payload: JSON.stringify(payload).substring(0, 500),
     });
 
+    addLog({
+      type: 'about_to_call_handleWebhook',
+      object: payload.object,
+      entryCount: payload.entry?.length || 0,
+    });
+
     // Process webhook with signature verification
-    // We respond immediately to WhatsApp and process in the background
-    webhookHandler.handleWebhook(payload, rawBody, signature).catch(error => {
-      logger.error({
-        type: 'webhook_async_processing_error',
+    // IMPORTANT: Process synchronously to catch errors
+    try {
+      await webhookHandler.handleWebhook(payload, rawBody, signature);
+      
+      addLog({
+        type: 'handleWebhook_completed_successfully',
+      });
+      
+      logger.info({
+        type: 'webhook_processing_completed',
+      });
+    } catch (error) {
+      addLog({
+        type: 'handleWebhook_error',
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
       });
-    });
+      
+      logger.error({
+        type: 'webhook_processing_error_caught',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
 
-    // Return 200 OK immediately to acknowledge receipt
+    // Return 200 OK to acknowledge receipt
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     logger.error({
