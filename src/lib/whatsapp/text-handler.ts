@@ -47,6 +47,25 @@ export class TextHandler {
     });
 
     try {
+      // Check if it's a command first (commands should work even during setup)
+      const command = this.recognizeCommand(text);
+      
+      // Allow certain commands to cancel setup flow
+      if (command === Command.HELP || command === Command.START) {
+        // Cancel any ongoing setup
+        if (profileManager.isInSetupFlow(context.userId)) {
+          logger.info({
+            type: 'profile_setup_cancelled_by_command',
+            userId: context.userId,
+            command,
+          });
+          // Clear the setup session
+          profileManager.cancelSetup(context.userId);
+        }
+        await this.handleCommand(command, message, context);
+        return;
+      }
+      
       // Check if user is in profile setup flow
       if (profileManager.isInSetupFlow(context.userId)) {
         const setupComplete = await profileManager.processSetupInput(
@@ -65,9 +84,7 @@ export class TextHandler {
         return; // Don't process further if in setup flow
       }
 
-      // Check if it's a command
-      const command = this.recognizeCommand(text);
-
+      // Handle other commands
       if (command !== Command.UNKNOWN) {
         await this.handleCommand(command, message, context);
       } else {
