@@ -133,75 +133,98 @@ export class WebhookHandler {
    * Handle messages change event
    */
   private async handleMessagesChange(value: any): Promise<void> {
-    const { messages, contacts } = value;
-
-    // Add to debug logs
+    // Add to debug logs FIRST
     const { addLog } = await import('@/app/api/debug-logs/route');
-    addLog({
-      type: 'messages_change_received',
-      hasMessages: !!messages,
-      messageCount: messages?.length || 0,
-      hasContacts: !!contacts,
-      value: value,
-      messagesArray: messages,
-    });
+    
+    try {
+      const { messages, contacts } = value;
 
-    if (!messages || messages.length === 0) {
-      logger.warn({
-        type: 'no_messages_in_webhook',
-        value: JSON.stringify(value).substring(0, 500),
-      });
       addLog({
-        type: 'no_messages_early_return',
+        type: 'messages_change_received',
         hasMessages: !!messages,
-        messagesLength: messages?.length,
+        messageCount: messages?.length || 0,
+        hasContacts: !!contacts,
+        messagesIsArray: Array.isArray(messages),
+        value: value,
+        messagesArray: messages,
       });
-      return;
-    }
 
-    // Get contact name if available
-    const contactName = contacts?.[0]?.profile?.name;
-
-    addLog({
-      type: 'about_to_process_messages',
-      messageCount: messages.length,
-      contactName,
-    });
-
-    // Process each message
-    for (let i = 0; i < messages.length; i++) {
-      const message = messages[i];
-      addLog({
-        type: 'processing_message_loop',
-        index: i,
-        messageId: message?.id,
-        messageType: message?.type,
-      });
-      
-      try {
-        await this.processMessage(message, contactName);
-      } catch (error) {
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        logger.warn({
+          type: 'no_messages_in_webhook',
+          hasMessages: !!messages,
+          isArray: Array.isArray(messages),
+          length: messages?.length,
+        });
         addLog({
-          type: 'message_loop_error',
+          type: 'no_messages_early_return',
+          hasMessages: !!messages,
+          isArray: Array.isArray(messages),
+          messagesLength: messages?.length,
+        });
+        return;
+      }
+
+      // Get contact name if available
+      const contactName = contacts?.[0]?.profile?.name;
+
+      addLog({
+        type: 'about_to_process_messages',
+        messageCount: messages.length,
+        contactName,
+        firstMessage: messages[0],
+      });
+
+      // Process each message with explicit try-catch
+      for (let i = 0; i < messages.length; i++) {
+        const message = messages[i];
+        
+        addLog({
+          type: 'processing_message_loop',
           index: i,
           messageId: message?.id,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          stack: error instanceof Error ? error.stack : undefined,
+          messageType: message?.type,
+          message: message,
         });
         
-        logger.error({
-          type: 'message_processing_error',
-          messageId: message.id,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-        // Continue processing other messages even if one fails
+        try {
+          await this.processMessage(message, contactName);
+          
+          addLog({
+            type: 'message_processed_in_loop',
+            index: i,
+            messageId: message?.id,
+          });
+        } catch (error) {
+          addLog({
+            type: 'message_loop_error',
+            index: i,
+            messageId: message?.id,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : undefined,
+          });
+          
+          logger.error({
+            type: 'message_processing_error',
+            messageId: message.id,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+          // Continue processing other messages even if one fails
+        }
       }
-    }
 
-    addLog({
-      type: 'finished_processing_all_messages',
-      totalProcessed: messages.length,
-    });
+      addLog({
+        type: 'finished_processing_all_messages',
+        totalProcessed: messages.length,
+      });
+    } catch (error) {
+      addLog({
+        type: 'handleMessagesChange_error',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      throw error;
+    }
   }
 
   /**
