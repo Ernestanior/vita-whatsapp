@@ -294,30 +294,6 @@ Commands:
     }
   }
 
-您已经设置完成。发送食物照片开始吧！
-
-命令：
-/profile - 查看健康画像
-/stats - 查看统计数据
-/help - 获取帮助`,
-        
-        'zh-TW': `👋 歡迎回到 Vita AI！
-
-您已經設置完成。發送食物照片開始吧！
-
-命令：
-/profile - 查看健康畫像
-/stats - 查看統計數據
-/help - 獲取幫助`,
-      };
-
-      await whatsappClient.sendTextMessage(userId, messages[context.language]);
-    } else {
-      // Start profile setup
-      await profileManager.initializeProfile(userId, context.language);
-    }
-  }
-
   /**
    * Handle /profile command - View/update health profile
    */
