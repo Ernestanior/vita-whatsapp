@@ -212,13 +212,25 @@ export class TextHandler {
     userId: string,
     context: MessageContext
   ): Promise<void> {
-    // Check if user already has a profile
-    const hasProfile = await profileManager.hasProfile(userId);
+    try {
+      logger.info({
+        type: 'start_command_processing',
+        userId,
+      });
 
-    if (hasProfile) {
-      // User already has profile, send welcome back message
-      const messages = {
-        'en': `👋 Welcome back to Vita AI!
+      // Check if user already has a profile
+      const hasProfile = await profileManager.hasProfile(userId);
+
+      logger.info({
+        type: 'profile_check_result',
+        userId,
+        hasProfile,
+      });
+
+      if (hasProfile) {
+        // User already has profile, send welcome back message
+        const messages = {
+          'en': `👋 Welcome back to Vita AI!
 
 You're all set up. Send me a photo of your meal to get started!
 
@@ -226,8 +238,61 @@ Commands:
 /profile - View your health profile
 /stats - View your statistics
 /help - Get help`,
+          
+          'zh-CN': `👋 欢迎回到 Vita AI！
+
+您已经设置完成。发送食物照片开始吧！
+
+命令：
+/profile - 查看健康画像
+/stats - 查看统计数据
+/help - 获取帮助`,
+          
+          'zh-TW': `👋 歡迎回到 Vita AI！
+
+您已經設置完成。發送食物照片開始吧！
+
+命令：
+/profile - 查看健康畫像
+/stats - 查看統計數據
+/help - 獲取幫助`,
+        };
+
+        logger.info({
+          type: 'sending_welcome_back_message',
+          userId,
+        });
+
+        await whatsappClient.sendTextMessage(userId, messages[context.language]);
         
-        'zh-CN': `👋 欢迎回到 Vita AI！
+        logger.info({
+          type: 'welcome_back_message_sent',
+          userId,
+        });
+      } else {
+        // Start profile setup
+        logger.info({
+          type: 'starting_profile_setup',
+          userId,
+        });
+        
+        await profileManager.initializeProfile(userId, context.language);
+        
+        logger.info({
+          type: 'profile_setup_initialized',
+          userId,
+        });
+      }
+    } catch (error) {
+      logger.error({
+        type: 'start_command_error',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      throw error;
+    }
+  }
 
 您已经设置完成。发送食物照片开始吧！
 
