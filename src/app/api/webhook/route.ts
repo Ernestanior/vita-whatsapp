@@ -80,6 +80,16 @@ export async function POST(request: NextRequest) {
     const rawBody = await request.text();
     const signature = request.headers.get('x-hub-signature-256');
 
+    // Add to debug logs
+    const { addLog } = await import('@/app/api/debug-logs/route');
+    addLog({
+      type: 'webhook_received',
+      hasSignature: !!signature,
+      bodyLength: rawBody.length,
+      body: rawBody,
+      headers: Object.fromEntries(request.headers.entries()),
+    });
+
     logger.info({
       type: 'webhook_received',
       hasSignature: !!signature,
@@ -92,7 +102,21 @@ export async function POST(request: NextRequest) {
     let payload: WebhookPayload;
     try {
       payload = JSON.parse(rawBody);
+      
+      // Add to debug logs
+      addLog({
+        type: 'webhook_payload_parsed',
+        object: payload.object,
+        entryCount: payload.entry?.length || 0,
+        payload: payload,
+      });
     } catch (error) {
+      addLog({
+        type: 'webhook_invalid_json',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        rawBody: rawBody.substring(0, 200),
+      });
+      
       logger.error({
         type: 'webhook_invalid_json',
         error: error instanceof Error ? error.message : 'Unknown error',
