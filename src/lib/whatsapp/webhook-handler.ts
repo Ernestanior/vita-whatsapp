@@ -143,6 +143,7 @@ export class WebhookHandler {
       messageCount: messages?.length || 0,
       hasContacts: !!contacts,
       value: value,
+      messagesArray: messages,
     });
 
     if (!messages || messages.length === 0) {
@@ -150,17 +151,44 @@ export class WebhookHandler {
         type: 'no_messages_in_webhook',
         value: JSON.stringify(value).substring(0, 500),
       });
+      addLog({
+        type: 'no_messages_early_return',
+        hasMessages: !!messages,
+        messagesLength: messages?.length,
+      });
       return;
     }
 
     // Get contact name if available
     const contactName = contacts?.[0]?.profile?.name;
 
+    addLog({
+      type: 'about_to_process_messages',
+      messageCount: messages.length,
+      contactName,
+    });
+
     // Process each message
-    for (const message of messages) {
+    for (let i = 0; i < messages.length; i++) {
+      const message = messages[i];
+      addLog({
+        type: 'processing_message_loop',
+        index: i,
+        messageId: message?.id,
+        messageType: message?.type,
+      });
+      
       try {
         await this.processMessage(message, contactName);
       } catch (error) {
+        addLog({
+          type: 'message_loop_error',
+          index: i,
+          messageId: message?.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+        
         logger.error({
           type: 'message_processing_error',
           messageId: message.id,
@@ -169,6 +197,11 @@ export class WebhookHandler {
         // Continue processing other messages even if one fails
       }
     }
+
+    addLog({
+      type: 'finished_processing_all_messages',
+      totalProcessed: messages.length,
+    });
   }
 
   /**
