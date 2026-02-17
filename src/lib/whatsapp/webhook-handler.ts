@@ -172,20 +172,36 @@ export class WebhookHandler {
     });
 
     try {
-      // Mark message as read
+      // Mark message as read (non-blocking, ignore errors)
       logger.info({
         type: 'marking_message_as_read',
         messageId: message.id,
       });
-      await whatsappClient.markAsRead(message.id);
+      
+      whatsappClient.markAsRead(message.id).catch(error => {
+        logger.warn({
+          type: 'mark_as_read_failed',
+          messageId: message.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        // Don't throw, continue processing
+      });
 
-      // Send initial acknowledgment
+      // Send initial acknowledgment (non-blocking)
       logger.info({
         type: 'sending_acknowledgment',
         messageId: message.id,
         messageType: message.type,
       });
-      await this.sendAcknowledgment(message);
+      
+      this.sendAcknowledgment(message).catch(error => {
+        logger.warn({
+          type: 'acknowledgment_failed',
+          messageId: message.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        // Don't throw, continue processing
+      });
 
       // Create message context
       const context: MessageContext = {
@@ -216,7 +232,7 @@ export class WebhookHandler {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
       });
-      throw error;
+      // Don't throw - we want to return 200 to WhatsApp
     }
   }
 
