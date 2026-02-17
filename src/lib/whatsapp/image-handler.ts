@@ -499,8 +499,25 @@ export class ImageHandler {
   ): Promise<string> {
     const supabase = await createClient();
 
+    // Get user UUID from phone number
+    const { data: user } = await supabase
+      .from('users')
+      .select('id')
+      .eq('phone_number', userId)
+      .maybeSingle();
+
+    if (!user) {
+      logger.error({
+        type: 'record_save_user_not_found',
+        userId,
+      });
+      throw new Error('User not found');
+    }
+
+    const userUuid = user.id;
+
     const record: FoodRecordInsert = {
-      user_id: userId,
+      user_id: userUuid,
       image_url: imageUrl,
       image_hash: imageHash,
       recognition_result: recognitionResult as any,
@@ -508,7 +525,7 @@ export class ImageHandler {
       meal_context: recognitionResult.mealContext,
     };
 
-    const { data, error } = await supabase
+    const { data, error} = await supabase
       .from('food_records')
       .insert(record)
       .select('id')
@@ -518,6 +535,7 @@ export class ImageHandler {
       logger.error({
         type: 'record_save_error',
         userId,
+        userUuid,
         error: error.message,
       });
       throw new Error('Failed to save record');
