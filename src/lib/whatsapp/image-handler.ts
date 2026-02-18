@@ -185,12 +185,22 @@ export class ImageHandler {
 
       const healthRating = await ratingEngine.evaluate(recognitionResult, ratingProfile);
 
-      // 10. Upload image to storage
-      const imageUrl = await this.uploadImage(
-        context.userId,
-        processed.buffer,
-        imageHash
-      );
+      // 10. Upload image to storage (non-blocking)
+      let imageUrl = '';
+      try {
+        imageUrl = await this.uploadImage(
+          context.userId,
+          processed.buffer,
+          imageHash
+        );
+      } catch (uploadError) {
+        logger.warn({
+          type: 'image_upload_failed_non_critical',
+          error: uploadError instanceof Error ? uploadError.message : 'Unknown error',
+        });
+        // Continue without image URL - not critical
+        imageUrl = `placeholder://${imageHash}`;
+      }
 
       // 11. Save record to database
       const recordId = await this.saveRecord(
