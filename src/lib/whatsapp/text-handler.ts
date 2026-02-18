@@ -220,66 +220,22 @@ export class TextHandler {
 
   /**
    * Use AI to detect user intent from natural language
-   * Cost: ~50-100 tokens per call (~$0.0001)
+   * Uses Gemini 2.0 Flash (primary) with GPT-4o-mini fallback
    */
   private async detectIntentWithAI(text: string): Promise<Command> {
-    const { OpenAI } = await import('openai');
-    const { env } = await import('@/config/env');
+    const { intentDetector, Intent } = await import('@/lib/ai/intent-detector');
     
-    const openai = new OpenAI({
-      apiKey: env.OPENAI_API_KEY,
-    });
+    const intent = await intentDetector.detect(text);
 
-    const systemPrompt = `You are an intent classifier for a nutrition tracking WhatsApp bot.
-
-Available commands:
-- STATS: User wants to see statistics, data analysis, summaries, reports about their nutrition
-- HISTORY: User wants to see their meal history, past records, what they ate recently
-- PROFILE: User wants to see or update their personal profile, health info, height, weight
-- HELP: User needs help, instructions, doesn't know how to use the bot
-- START: User wants to start over, begin, reset
-- SETTINGS: User wants to change settings, preferences, language
-- UNKNOWN: None of the above, general conversation
-
-Respond with ONLY the command name (e.g., "STATS", "HISTORY", etc.). No explanation.
-
-Examples:
-User: "我想看一下数据分析" → STATS
-User: "我最近吃了什么" → HISTORY
-User: "我的个人信息" → PROFILE
-User: "怎么用这个" → HELP
-User: "你好" → UNKNOWN
-User: "show me my statistics" → STATS
-User: "what did I eat yesterday" → HISTORY`;
-
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: text },
-      ],
-      max_tokens: 10,
-      temperature: 0, // Deterministic
-    });
-
-    const intent = response.choices[0]?.message?.content?.trim().toUpperCase() || 'UNKNOWN';
-
-    logger.info({
-      type: 'ai_intent_detected',
-      text: text.substring(0, 50),
-      intent,
-      tokensUsed: response.usage?.total_tokens || 0,
-    });
-
-    // Map AI response to Command enum
+    // Map Intent enum to Command enum
     const intentMap: Record<string, Command> = {
-      'STATS': Command.STATS,
-      'HISTORY': Command.HISTORY,
-      'PROFILE': Command.PROFILE,
-      'HELP': Command.HELP,
-      'START': Command.START,
-      'SETTINGS': Command.SETTINGS,
-      'UNKNOWN': Command.UNKNOWN,
+      [Intent.STATS]: Command.STATS,
+      [Intent.HISTORY]: Command.HISTORY,
+      [Intent.PROFILE]: Command.PROFILE,
+      [Intent.HELP]: Command.HELP,
+      [Intent.START]: Command.START,
+      [Intent.SETTINGS]: Command.SETTINGS,
+      [Intent.UNKNOWN]: Command.UNKNOWN,
     };
 
     return intentMap[intent] || Command.UNKNOWN;

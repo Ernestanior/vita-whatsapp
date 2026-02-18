@@ -4,6 +4,7 @@ const envSchema = z.object({
   // AI API
   OPENAI_API_KEY: z.string().min(1, 'OpenAI API key is required'),
   OPENAI_ORG_ID: z.string().optional(),
+  GOOGLE_AI_API_KEY: z.string().min(1, 'Google AI API key is required'),
   
   // WhatsApp
   WHATSAPP_TOKEN: z.string().min(1, 'WhatsApp token is required'),

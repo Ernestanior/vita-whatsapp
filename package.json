@@ -14,6 +14,7 @@
     "test": "echo \"Tests will be added in later tasks\" && exit 0"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.95.3",
     "@upstash/redis": "^1.36.2",
     "fast-check": "^4.5.3",
