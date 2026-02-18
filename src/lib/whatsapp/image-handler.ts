@@ -23,6 +23,7 @@ import { cacheManager } from '@/lib/cache/cache-manager';
 import { profileManager } from '@/lib/profile/profile-manager';
 import { createClient } from '@/lib/supabase/server';
 import { imageHandler as imageProcessor } from '@/lib/food-recognition/image-handler';
+import { responseFormatterSG } from './response-formatter-sg';
 import type { Message, MessageContext } from '@/types/whatsapp';
 import type { FoodRecognitionResult, HealthRating } from '@/types';
 import type { FoodRecordInsert } from '@/lib/database/schema';
@@ -582,8 +583,8 @@ export class ImageHandler {
     rating: HealthRating,
     recordId: string
   ): Promise<void> {
-    // Format the response message
-    const message = this.formatResponseMessage(result, rating, context.language);
+    // Use new Singapore-style formatter with Uncle personality by default
+    const message = responseFormatterSG.formatResponse(result, rating, 'uncle');
 
     // Send the main message
     await whatsappClient.sendTextMessage(context.userId, message);
