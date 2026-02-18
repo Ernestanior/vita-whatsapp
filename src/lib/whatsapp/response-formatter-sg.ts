@@ -116,7 +116,7 @@ export class ResponseFormatterSG {
     // Emotional encouragement
     if (score < 60) {
       response += `💪 *Don't worry leh!*\n`;
-      response += `One meal only mah. Tomorrow can balance back! 加油！\n`;
+      response += `One meal only mah. Tomorrow can balance back!\n`;
     } else if (score >= 80) {
       response += `🎉 *Shiok ah!*\n`;
       response += `Keep it up! You're doing great! 💪\n`;
@@ -206,25 +206,21 @@ export class ResponseFormatterSG {
     if (poorFactors.some(f => f.message.toLowerCase().includes('sodium') || f.message.includes('钠')) ||
         moderateFactors.some(f => f.message.toLowerCase().includes('sodium') || f.message.includes('钠'))) {
       actions.push('• Drink 500ml water now to flush sodium');
-      actions.push('• 现在喝 500ml 水冲淡钠含量');
     }
     
     // High fat
     if (poorFactors.some(f => f.message.toLowerCase().includes('fat') || f.message.includes('脂肪')) ||
         moderateFactors.some(f => f.message.toLowerCase().includes('fat') || f.message.includes('脂肪'))) {
       actions.push('• Take a 10-min walk after eating');
-      actions.push('• 饭后走 10 分钟');
     }
     
     // High calories
     if (result.totalNutrition.calories.min > 600) {
       actions.push('• Skip afternoon snack today');
-      actions.push('• 今天下午茶可以 skip 了');
     }
     
     if (actions.length === 0) {
       actions.push('• Keep up the good work!');
-      actions.push('• 继续保持！');
     }
     
     return actions.slice(0, 2).join('\n');
@@ -241,18 +237,15 @@ export class ResponseFormatterSG {
     if (total.fat.min > 20) {
       suggestions.push('• Yong Tau Foo (soup, no fried items)');
       suggestions.push('• Fish Soup with vegetables');
-      suggestions.push('• 酿豆腐汤（不要油炸）');
     }
     // High carb → suggest protein
     else if (total.carbs.min > 60) {
       suggestions.push('• Grilled chicken with salad');
       suggestions.push('• Steamed fish with veggies');
-      suggestions.push('• 烤鸡配沙拉');
     }
     // Balanced meal
     else {
       suggestions.push('• Continue with balanced meals');
-      suggestions.push('• 继续保持均衡饮食');
     }
     
     return suggestions.slice(0, 2).join('\n');

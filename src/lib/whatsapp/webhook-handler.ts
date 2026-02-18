@@ -407,9 +407,19 @@ export class WebhookHandler {
   private async sendAcknowledgment(message: Message): Promise<void> {
     try {
       if (message.type === 'image') {
+        // Get user's language preference
+        const { languageDetector } = await import('@/lib/language/detector');
+        const userLanguage = await languageDetector.getUserLanguage(message.from);
+        
+        const messages = {
+          'en': '📸 Got your photo! Analyzing your food...',
+          'zh-CN': '📸 收到您的照片！正在分析中...',
+          'zh-TW': '📸 收到您的照片！正在分析中...',
+        };
+        
         await whatsappClient.sendTextMessage(
           message.from,
-          '📸 收到您的照片！正在分析中...'
+          messages[userLanguage]
         );
       } else if (message.type === 'text') {
         // For text messages, we'll respond after processing

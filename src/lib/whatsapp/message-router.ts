@@ -3,6 +3,7 @@ import type { Message, MessageContext } from '@/types/whatsapp';
 import { TextHandler } from './text-handler';
 import { imageHandler } from './image-handler';
 import { interactiveHandler } from './interactive-handler';
+import { languageDetector } from '@/lib/language/detector';
 
 /**
  * MessageRouter - Routes messages to appropriate handlers based on type
@@ -24,9 +25,16 @@ export class MessageRouter {
    */
   async route(message: Message, context: MessageContext): Promise<void> {
     try {
-      // Detect language if not already set
-      if (context.language === 'en') {
-        context.language = await this.detectLanguage(message, context.userId);
+      // Detect and update language from user's message
+      if (message.type === 'text' && message.text?.body) {
+        // Detect language from text and update user preference
+        context.language = await languageDetector.detectAndUpdate(
+          context.userId,
+          message.text.body
+        );
+      } else {
+        // For non-text messages, get user's saved language preference
+        context.language = await languageDetector.getUserLanguage(context.userId);
       }
 
       logger.info({
@@ -127,51 +135,6 @@ Coming soon: Voice recognition! 🚀`,
       context.userId,
       messages[context.language]
     );
-  }
-
-  /**
-   * Detect user's language preference
-   * 
-   * Strategy:
-   * 1. Check user profile in database
-   * 2. Analyze message content for language patterns
-   * 3. Default to English
-   */
-  private async detectLanguage(
-    message: Message,
-    userId: string
-  ): Promise<'en' | 'zh-CN' | 'zh-TW'> {
-    try {
-      // TODO: Check user profile in database for saved language preference
-      // const profile = await getUserProfile(userId);
-      // if (profile?.language) return profile.language;
-
-      // Analyze message content for language detection
-      if (message.type === 'text' && message.text?.body) {
-        const text = message.text.body;
-        
-        // Simple language detection based on character ranges
-        // Chinese characters: \u4e00-\u9fff
-        const chineseChars = text.match(/[\u4e00-\u9fff]/g);
-        
-        if (chineseChars && chineseChars.length > text.length * 0.3) {
-          // If more than 30% Chinese characters, assume Chinese
-          // For now, default to Simplified Chinese
-          // TODO: Distinguish between Simplified and Traditional
-          return 'zh-CN';
-        }
-      }
-
-      // Default to English
-      return 'en';
-    } catch (error) {
-      logger.error({
-        type: 'language_detection_error',
-        userId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      return 'en'; // Fallback to English
-    }
   }
 
   /**
