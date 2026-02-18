@@ -36,13 +36,21 @@ export class ImageHandler {
     const startTime = Date.now();
     let timeoutMessageSent = false;
 
-    // Set up timeout warning (10 seconds)
+    // Set up timeout warning (30 seconds - more reasonable for image processing)
     const timeoutWarning = setTimeout(async () => {
       try {
         timeoutMessageSent = true;
+        
+        // Use user's language for timeout message
+        const messages = {
+          'en': '⏳ Processing is taking longer than usual, please wait...',
+          'zh-CN': '⏳ 处理时间较长，请稍候...',
+          'zh-TW': '⏳ 處理時間較長，請稍候...',
+        };
+        
         await whatsappClient.sendTextMessage(
           context.userId,
-          '⏳ 处理时间较长，请稍候...\n\nProcessing is taking longer than usual, please wait...'
+          messages[context.language]
         );
         logger.info({
           type: 'timeout_warning_sent',
@@ -56,7 +64,7 @@ export class ImageHandler {
           error: error instanceof Error ? error.message : 'Unknown error',
         });
       }
-    }, 10000);
+    }, 30000); // 30 seconds instead of 10
 
     try {
       logger.info({

@@ -314,26 +314,14 @@ export class WebhookHandler {
       });
 
       // CRITICAL: Send acknowledgment BEFORE routing (must succeed for images)
+      // NOTE: Acknowledgment is now handled by image-handler, not here
+      // This prevents duplicate messages
       if (message.type === 'image') {
         logger.info({
-          type: 'sending_critical_acknowledgment',
+          type: 'skipping_acknowledgment_in_webhook',
           messageId: message.id,
+          reason: 'Will be sent by image-handler',
         });
-        
-        try {
-          await this.sendAcknowledgment(message);
-          logger.info({
-            type: 'acknowledgment_sent_successfully',
-            messageId: message.id,
-          });
-        } catch (ackError) {
-          logger.error({
-            type: 'critical_acknowledgment_failed',
-            messageId: message.id,
-            error: ackError instanceof Error ? ackError.message : 'Unknown error',
-          });
-          // Still try to process, but user won't know we received it
-        }
       }
 
       // Create message context
