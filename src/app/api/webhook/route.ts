@@ -141,23 +141,35 @@ export async function POST(request: NextRequest) {
       entryCount: payload.entry?.length || 0,
     });
 
-    // Process webhook ASYNCHRONOUSLY (fire-and-forget)
-    // Return 200 immediately to WhatsApp, process in background
-    webhookHandler.handleWebhook(payload, rawBody, signature).then(() => {
-      addLog({
-        type: 'handleWebhook_completed_successfully',
-      });
-      
-      logger.info({
-        type: 'webhook_processing_completed',
-      });
+    // Process webhook with TIMEOUT protection
+    // Use Promise.race to ensure we return 200 within 5 seconds
+    const processingPromise = webhookHandler.handleWebhook(payload, rawBody, signature);
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
+    
+    Promise.race([processingPromise, timeoutPromise]).then((result) => {
+      if (result === null) {
+        addLog({
+          type: 'handleWebhook_timeout_but_continuing',
+          message: 'Processing took > 5s, but continuing in background',
+        });
+        logger.warn({
+          type: 'webhook_processing_timeout',
+          message: 'Processing took > 5s, returned 200 but still processing',
+        });
+      } else {
+        addLog({
+          type: 'handleWebhook_completed_successfully',
+        });
+        logger.info({
+          type: 'webhook_processing_completed',
+        });
+      }
     }).catch((error) => {
       addLog({
         type: 'handleWebhook_error',
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
       });
-      
       logger.error({
         type: 'webhook_processing_error_caught',
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -165,8 +177,7 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    // Return 200 OK IMMEDIATELY to acknowledge receipt
-    // Processing continues in background
+    // Return 200 OK immediately (don't wait for processing)
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     logger.error({
