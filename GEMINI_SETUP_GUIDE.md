@@ -1,6 +1,8 @@
 # Gemini 2.0 Flash 设置指南
 
-## 为什么选择 Gemini？
+## 为什么选择 Gemini 2.0 Flash？
+
+**Gemini 2.0 Flash** 是 Google 在 2024 年 12 月发布的最新模型，专为高频、低延迟场景设计。
 
 ### 成本对比
 

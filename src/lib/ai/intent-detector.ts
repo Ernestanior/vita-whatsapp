@@ -73,14 +73,20 @@ export class IntentDetector {
   }
 
   /**
-   * Detect intent using Gemini 2.0 Flash
+   * Detect intent using Gemini 2.0 Flash Experimental
+   * Latest stable model as of Feb 2026
    * Cost: $0.075/1M input tokens, $0.30/1M output tokens
    * Free tier: 1500 requests/day
+   * 
+   * Note: Gemini 3 Flash is in preview but not yet stable for production
    */
   private async detectWithGemini(text: string): Promise<Intent> {
     const { GoogleGenerativeAI } = await import('@google/generative-ai');
     
     const genAI = new GoogleGenerativeAI(env.GOOGLE_AI_API_KEY);
+    
+    // Use gemini-2.0-flash-exp (latest stable)
+    // When gemini-3-flash becomes stable, we can switch to it
     const model = genAI.getGenerativeModel({ 
       model: 'gemini-2.0-flash-exp',
       generationConfig: {
@@ -104,6 +110,7 @@ export class IntentDetector {
       intent,
       responseTime,
       provider: 'gemini',
+      model: 'gemini-2.0-flash-exp',
     });
 
     return this.mapToIntent(intent);

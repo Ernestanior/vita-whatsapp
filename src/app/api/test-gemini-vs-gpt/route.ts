@@ -57,7 +57,7 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       summary: {
-        model: 'Gemini 2.0 Flash (with GPT-4o-mini fallback)',
+        model: 'Gemini 2.0 Flash (Dec 2024) with GPT-4o-mini fallback',
         totalTests: results.length,
         correct: correctCount,
         accuracy: `${accuracy}%`,
