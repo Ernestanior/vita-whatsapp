@@ -29,7 +29,7 @@ export class FoodRecognizer {
   private readonly MAX_TOKENS = 1000;
   private readonly TEMPERATURE = 0.3; // Lower temperature for more consistent results
   private readonly LOW_CONFIDENCE_THRESHOLD = 60;
-  private readonly API_TIMEOUT_MS = 10000; // 10 seconds timeout
+  private readonly API_TIMEOUT_MS = 45000; // 45 seconds timeout for OpenAI Vision API
 
   /**
    * Create a timeout promise

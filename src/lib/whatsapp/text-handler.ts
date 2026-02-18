@@ -11,6 +11,7 @@ export enum Command {
   PROFILE = 'profile',
   HELP = 'help',
   STATS = 'stats',
+  HISTORY = 'history',
   SETTINGS = 'settings',
   UNKNOWN = 'unknown',
 }
@@ -174,6 +175,14 @@ export class TextHandler {
       '统计': Command.STATS,
       '統計': Command.STATS,
       
+      // History command
+      '/history': Command.HISTORY,
+      '/历史': Command.HISTORY,
+      '/歷史': Command.HISTORY,
+      '历史': Command.HISTORY,
+      '歷史': Command.HISTORY,
+      'history': Command.HISTORY,
+      
       // Settings command
       '/settings': Command.SETTINGS,
       '/设置': Command.SETTINGS,
@@ -214,6 +223,10 @@ export class TextHandler {
 
       case Command.STATS:
         await this.handleStatsCommand(message.from, context);
+        break;
+
+      case Command.HISTORY:
+        await this.handleHistoryCommand(message.from, context);
         break;
 
       case Command.SETTINGS:
@@ -495,9 +508,223 @@ Use the buttons below to get started!`,
   }
 
   /**
+   * Handle /history command - Show recent meal history
+   */
+  private async handleHistoryCommand(
+    userId: string,
+    context: MessageContext
+  ): Promise<void> {
+    try {
+      const supabase = await (await import('@/lib/supabase/server')).createClient();
+      
+      // Get user UUID
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone_number', userId)
+        .maybeSingle();
+
+      if (!user) {
+        const messages = {
+          'en': '📊 No history yet!\n\nStart by sending a food photo.',
+          'zh-CN': '📊 还没有历史记录！\n\n发送食物照片开始记录。',
+          'zh-TW': '📊 還沒有歷史記錄！\n\n發送食物照片開始記錄。',
+        };
+        await whatsappClient.sendTextMessage(userId, messages[context.language]);
+        return;
+      }
+
+      // Get last 5 food records
+      const { data: records, error } = await supabase
+        .from('food_records')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error || !records || records.length === 0) {
+        const messages = {
+          'en': '📊 No meals recorded yet!\n\nSend a food photo to start tracking.',
+          'zh-CN': '📊 还没有记录餐食！\n\n发送食物照片开始追踪。',
+          'zh-TW': '📊 還沒有記錄餐食！\n\n發送食物照片開始追蹤。',
+        };
+        await whatsappClient.sendTextMessage(userId, messages[context.language]);
+        return;
+      }
+
+      // Format history message
+      let message = context.language === 'en' 
+        ? '📊 *Your Recent Meals*\n\n'
+        : '📊 *您的最近餐食*\n\n';
+
+      for (let i = 0; i < records.length; i++) {
+        const record = records[i];
+        const result = record.recognition_result as any;
+        const rating = record.health_rating as any;
+        const date = new Date(record.created_at);
+        const timeAgo = this.getTimeAgo(date, context.language);
+
+        const emoji = rating.overall === 'green' ? '🟢' : rating.overall === 'yellow' ? '🟡' : '🔴';
+        const foodName = result.foods[0]?.nameLocal || result.foods[0]?.name || 'Unknown';
+        const calories = Math.round((result.totalNutrition.calories.min + result.totalNutrition.calories.max) / 2);
+
+        message += `${i + 1}. ${emoji} ${foodName}\n`;
+        message += `   ${calories} kcal • ${timeAgo}\n\n`;
+      }
+
+      message += context.language === 'en'
+        ? '\nType "stats" for detailed statistics.'
+        : '\n输入"统计"查看详细数据。';
+
+      await whatsappClient.sendTextMessage(userId, message);
+
+    } catch (error) {
+      logger.error({
+        type: 'history_command_error',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      await this.sendErrorMessage(userId, context.language);
+    }
+  }
+
+  /**
+   * Get time ago string
+   */
+  private getTimeAgo(date: Date, language: 'en' | 'zh-CN' | 'zh-TW'): string {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) {
+      return language === 'en' ? 'Just now' : '刚刚';
+    } else if (diffMins < 60) {
+      return language === 'en' ? `${diffMins}m ago` : `${diffMins}分钟前`;
+    } else if (diffHours < 24) {
+      return language === 'en' ? `${diffHours}h ago` : `${diffHours}小时前`;
+    } else {
+      return language === 'en' ? `${diffDays}d ago` : `${diffDays}天前`;
+    }
+  }
+
+  /**
    * Handle /stats command - Show nutrition statistics
    */
   private async handleStatsCommand(
+    userId: string,
+    context: MessageContext
+  ): Promise<void> {
+    try {
+      const supabase = await (await import('@/lib/supabase/server')).createClient();
+      
+      // Get user UUID
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone_number', userId)
+        .maybeSingle();
+
+      if (!user) {
+        const messages = {
+          'en': '📈 No statistics yet!\n\nStart by sending a food photo.',
+          'zh-CN': '📈 还没有统计数据！\n\n发送食物照片开始记录。',
+          'zh-TW': '📈 還沒有統計數據！\n\n發送食物照片開始記錄。',
+        };
+        await whatsappClient.sendTextMessage(userId, messages[context.language]);
+        return;
+      }
+
+      // Get all food records
+      const { data: records, error } = await supabase
+        .from('food_records')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error || !records || records.length === 0) {
+        const messages = {
+          'en': '📈 No meals recorded yet!\n\nSend a food photo to start tracking.',
+          'zh-CN': '📈 还没有记录餐食！\n\n发送食物照片开始追踪。',
+          'zh-TW': '📈 還沒有記錄餐食！\n\n發送食物照片開始追蹤。',
+        };
+        await whatsappClient.sendTextMessage(userId, messages[context.language]);
+        return;
+      }
+
+      // Calculate statistics
+      let totalCalories = 0;
+      let totalProtein = 0;
+      let totalCarbs = 0;
+      let totalFat = 0;
+      let greenCount = 0;
+      let yellowCount = 0;
+      let redCount = 0;
+
+      for (const record of records) {
+        const result = record.recognition_result as any;
+        const rating = record.health_rating as any;
+
+        totalCalories += Math.round((result.totalNutrition.calories.min + result.totalNutrition.calories.max) / 2);
+        totalProtein += Math.round((result.totalNutrition.protein.min + result.totalNutrition.protein.max) / 2);
+        totalCarbs += Math.round((result.totalNutrition.carbs.min + result.totalNutrition.carbs.max) / 2);
+        totalFat += Math.round((result.totalNutrition.fat.min + result.totalNutrition.fat.max) / 2);
+
+        if (rating.overall === 'green') greenCount++;
+        else if (rating.overall === 'yellow') yellowCount++;
+        else redCount++;
+      }
+
+      const avgCalories = Math.round(totalCalories / records.length);
+      const avgProtein = Math.round(totalProtein / records.length);
+      const avgCarbs = Math.round(totalCarbs / records.length);
+      const avgFat = Math.round(totalFat / records.length);
+
+      // Format stats message
+      let message = context.language === 'en'
+        ? `📈 *Your Statistics*\n\n`
+        : `📈 *您的统计数据*\n\n`;
+
+      message += context.language === 'en'
+        ? `📊 *Total Meals:* ${records.length}\n\n`
+        : `📊 *总餐数:* ${records.length}\n\n`;
+
+      message += context.language === 'en'
+        ? `🍽️ *Average Per Meal:*\n`
+        : `🍽️ *每餐平均:*\n`;
+      message += `• ${avgCalories} kcal\n`;
+      message += `• ${avgProtein}g protein\n`;
+      message += `• ${avgCarbs}g carbs\n`;
+      message += `• ${avgFat}g fat\n\n`;
+
+      message += context.language === 'en'
+        ? `🎯 *Health Ratings:*\n`
+        : `🎯 *健康评分:*\n`;
+      message += `🟢 Healthy: ${greenCount}\n`;
+      message += `🟡 Moderate: ${yellowCount}\n`;
+      message += `🔴 Unhealthy: ${redCount}\n\n`;
+
+      message += context.language === 'en'
+        ? `Type "history" to see recent meals.`
+        : `输入"历史"查看最近餐食。`;
+
+      await whatsappClient.sendTextMessage(userId, message);
+
+    } catch (error) {
+      logger.error({
+        type: 'stats_command_error',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      await this.sendErrorMessage(userId, context.language);
+    }
+  }
+
+  /**
+   * Handle /stats command - Show nutrition statistics
+   */
+  private async handleStatsCommandOld(
     userId: string,
     context: MessageContext
   ): Promise<void> {
