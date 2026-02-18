@@ -1,6 +1,6 @@
 import { logger } from '@/utils/logger';
 import type { Message, MessageContext } from '@/types/whatsapp';
-import { TextHandler } from './text-handler';
+import { TextHandlerV2 } from './text-handler-v2';
 import { imageHandler } from './image-handler';
 import { interactiveHandler } from './interactive-handler';
 import { languageDetector } from '@/lib/language/detector';
@@ -12,12 +12,14 @@ import { languageDetector } from '@/lib/language/detector';
  * - Identify message type (text/image/interactive)
  * - Detect user language preference
  * - Route to appropriate handler
+ * 
+ * UPGRADED: Now uses TextHandlerV2 with AI-powered conversation routing
  */
 export class MessageRouter {
-  private textHandler: TextHandler;
+  private textHandler: TextHandlerV2;
 
   constructor() {
-    this.textHandler = new TextHandler();
+    this.textHandler = new TextHandlerV2();
   }
 
   /**
