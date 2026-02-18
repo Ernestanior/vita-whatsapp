@@ -78,6 +78,10 @@ export class TextHandlerV2 {
           await this.handleUpdateProfile(context, text, decision.extractedData);
           break;
 
+        case 'NEED_CURRENT_DATA':
+          await this.handleRelativeChange(context, text, decision.extractedData);
+          break;
+
         case 'VIEW_STATS':
           await this.handleViewStats(context);
           break;
@@ -225,6 +229,91 @@ ${extractedData.height ? `• 身高：${extractedData.height} 厘米\n` : ''}${
         context.language
       );
     }
+  }
+
+  /**
+   * Handle NEED_CURRENT_DATA action - for relative changes like "gained 2kg"
+   */
+  private async handleRelativeChange(
+    context: MessageContext,
+    text: string,
+    extractedData?: any
+  ): Promise<void> {
+    // Get current profile
+    const profile = await profileManager.getProfile(context.userId);
+
+    if (!profile) {
+      // No profile, ask user to set up first
+      const messages = {
+        'en': `I need to know your current weight first! Please tell me:
+"I'm currently 70kg"`,
+        'zh-CN': `我需要先知道您当前的体重！请告诉我：
+"我现在 70kg"`,
+        'zh-TW': `我需要先知道您當前的體重！請告訴我：
+"我現在 70kg"`,
+      };
+      await whatsappClient.sendTextMessage(context.userId, messages[context.language]);
+      return;
+    }
+
+    // Calculate new values based on changes
+    const updates: any = {};
+
+    if (extractedData?.weightChange !== undefined && profile.weight) {
+      const newWeight = profile.weight + extractedData.weightChange;
+      updates.weight = Math.round(newWeight * 10) / 10; // Round to 1 decimal
+    }
+
+    if (extractedData?.heightChange !== undefined && profile.height) {
+      const newHeight = profile.height + extractedData.heightChange;
+      updates.height = Math.round(newHeight);
+    }
+
+    if (Object.keys(updates).length === 0) {
+      // No valid changes detected
+      const messages = {
+        'en': `I couldn't understand the change. Please tell me your current weight:
+"I'm now 70kg"`,
+        'zh-CN': `我没理解您的变化。请告诉我您现在的体重：
+"我现在 70kg"`,
+        'zh-TW': `我沒理解您的變化。請告訴我您現在的體重：
+"我現在 70kg"`,
+      };
+      await whatsappClient.sendTextMessage(context.userId, messages[context.language]);
+      return;
+    }
+
+    // Update profile
+    await profileManager.updateProfile(context.userId, updates);
+
+    // Send confirmation with change details
+    const weightChange = extractedData?.weightChange;
+    const changeText = weightChange > 0 
+      ? (context.language === 'en' ? `gained ${Math.abs(weightChange)}kg` : `增加了 ${Math.abs(weightChange)}kg`)
+      : (context.language === 'en' ? `lost ${Math.abs(weightChange)}kg` : `减少了 ${Math.abs(weightChange)}kg`);
+
+    const messages = {
+      'en': `✅ Got it! You ${changeText}.
+
+Your new weight: ${updates.weight} kg
+Previous weight: ${profile.weight} kg
+
+Keep it up! 💪`,
+      'zh-CN': `✅ 明白了！您${changeText}。
+
+新体重：${updates.weight} 公斤
+之前体重：${profile.weight} 公斤
+
+继续加油！💪`,
+      'zh-TW': `✅ 明白了！您${changeText}。
+
+新體重：${updates.weight} 公斤
+之前體重：${profile.weight} 公斤
+
+繼續加油！💪`,
+    };
+
+    await whatsappClient.sendTextMessage(context.userId, messages[context.language]);
   }
 
   /**

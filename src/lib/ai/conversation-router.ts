@@ -14,7 +14,7 @@ import type { MessageContext } from '@/types/whatsapp';
 
 export interface ConversationDecision {
   action: 'VIEW_PROFILE' | 'UPDATE_PROFILE' | 'VIEW_STATS' | 'VIEW_HISTORY' | 
-          'HELP' | 'START' | 'SETTINGS' | 'CHAT' | 'UNKNOWN';
+          'HELP' | 'START' | 'SETTINGS' | 'CHAT' | 'NEED_CURRENT_DATA' | 'UNKNOWN';
   confidence: number;
   reasoning: string;
   extractedData?: {
@@ -24,6 +24,8 @@ export interface ConversationDecision {
     gender?: 'male' | 'female';
     goal?: string;
     activityLevel?: string;
+    weightChange?: number; // For relative changes (positive = gained, negative = lost)
+    heightChange?: number; // For relative changes
   };
 }
 
@@ -40,18 +42,33 @@ Available actions:
 - START: User wants to start/restart
 - SETTINGS: User wants to change settings
 - CHAT: General conversation, questions about nutrition, etc.
+- NEED_CURRENT_DATA: User is providing RELATIVE changes (gained/lost weight) and needs current data to calculate new value
 - UNKNOWN: Unclear intent
 
 CRITICAL THINKING PROCESS:
 1. Is the user ASKING for information or PROVIDING information?
    - "show me my profile" → VIEW_PROFILE (asking)
-   - "I'm 79kg" → UPDATE_PROFILE (providing)
+   - "I'm 79kg" → UPDATE_PROFILE (providing absolute value)
+   - "I gained 2kg" → NEED_CURRENT_DATA (providing relative change)
    
 2. What data is the user providing?
-   - Extract: height, weight, age, gender, goal, activity level
+   - Absolute values: Extract exact numbers (height, weight, age, etc.)
+   - Relative changes: Detect words like "gained", "lost", "increased", "decreased", "胖了", "瘦了", "增加", "减少"
    
-3. What is the user's real intent?
+3. For RELATIVE changes:
+   - Return action: NEED_CURRENT_DATA
+   - Extract the change amount and direction in extractedData
+   - Example: "胖了两斤" → {"weightChange": +1} (两斤 = 1kg)
+   - Example: "瘦了3kg" → {"weightChange": -3}
+   - Example: "gained 5 pounds" → {"weightChange": +2.27} (5 pounds ≈ 2.27kg)
+   
+4. What is the user's real intent?
    - Consider context, tone, and specific words used
+
+WEIGHT CONVERSIONS:
+- 1 斤 (jin) = 0.5 kg
+- 1 pound (lb) = 0.453592 kg
+- Always convert to kg in extractedData
 
 Response format (JSON):
 {
@@ -89,6 +106,36 @@ User: "我想看一下数据分析"
   "action": "VIEW_STATS",
   "confidence": 0.97,
   "reasoning": "User wants to see data analysis/statistics"
+}
+
+User: "我胖了两斤"
+{
+  "action": "NEED_CURRENT_DATA",
+  "confidence": 0.98,
+  "reasoning": "User is reporting a relative weight change: gained 2 jin (1kg). Need current weight to calculate new value.",
+  "extractedData": {
+    "weightChange": 1
+  }
+}
+
+User: "I lost 5 pounds"
+{
+  "action": "NEED_CURRENT_DATA",
+  "confidence": 0.97,
+  "reasoning": "User lost 5 pounds (approximately 2.27kg). Need current weight to calculate new value.",
+  "extractedData": {
+    "weightChange": -2.27
+  }
+}
+
+User: "瘦了3公斤"
+{
+  "action": "NEED_CURRENT_DATA",
+  "confidence": 0.98,
+  "reasoning": "User lost 3kg. Need current weight to calculate new value.",
+  "extractedData": {
+    "weightChange": -3
+  }
 }
 
 User: "25 170 65"
