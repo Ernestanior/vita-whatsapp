@@ -600,6 +600,20 @@ For now, I automatically detect your language from your messages.`,
       textLength: text.length,
     });
 
+    // Check for greetings first
+    const normalizedText = text.trim().toLowerCase();
+    const greetings = [
+      'hi', 'hello', 'hey', 'hola', 'bonjour',
+      '你好', '您好', '嗨', '哈喽', '哈啰',
+      'start', 'begin', '开始', '開始'
+    ];
+    
+    if (greetings.some(greeting => normalizedText === greeting || normalizedText.includes(greeting))) {
+      // Treat as start command
+      await this.handleStartCommand(message.from, context);
+      return;
+    }
+
     // Try to parse as quick setup: "age height weight"
     const quickSetupMatch = text.trim().match(/^(\d{1,3})\s+(\d{2,3})\s+(\d{2,3})$/);
     if (quickSetupMatch) {
