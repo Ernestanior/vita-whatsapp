@@ -1063,17 +1063,60 @@ Please try again with the correct format.`,
 
   /**
    * Get user profile
+   * Accepts either phone number or UUID
    */
-  async getProfile(userId: string): Promise<HealthProfile | null> {
+  async getProfile(userIdOrPhone: string): Promise<HealthProfile | null> {
     const supabase = await createClient();
 
+    // Check if input is a UUID (contains hyphens) or phone number
+    const isUUID = userIdOrPhone.includes('-');
+    
+    let userId: string;
+    
+    if (isUUID) {
+      // Already a UUID, use directly
+      userId = userIdOrPhone;
+    } else {
+      // Phone number, need to convert to UUID
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone_number', userIdOrPhone)
+        .maybeSingle();
+
+      if (userError || !user) {
+        logger.warn({
+          type: 'user_not_found_for_profile',
+          phone: userIdOrPhone,
+          error: userError?.message,
+        });
+        return null;
+      }
+
+      userId = user.id;
+    }
+
+    // Now fetch the profile using UUID
     const { data, error } = await supabase
       .from('health_profiles')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
+    if (error) {
+      logger.error({
+        type: 'profile_fetch_error',
+        userId,
+        error: error.message,
+      });
+      return null;
+    }
+
+    if (!data) {
+      logger.info({
+        type: 'profile_not_found',
+        userId,
+      });
       return null;
     }
 
