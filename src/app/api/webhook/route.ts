@@ -141,44 +141,37 @@ export async function POST(request: NextRequest) {
       entryCount: payload.entry?.length || 0,
     });
 
-    // Process webhook SYNCHRONOUSLY with timeout protection
-    // This ensures errors are properly caught and handled
-    try {
-      // Set a timeout to ensure we respond within 10 seconds
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Processing timeout')), 10000)
-      );
-      
-      const processingPromise = webhookHandler.handleWebhook(payload, rawBody, signature);
-      
-      // Wait for processing to complete or timeout
-      await Promise.race([processingPromise, timeoutPromise]);
-      
-      addLog({
-        type: 'handleWebhook_completed_successfully',
+    // HYBRID APPROACH: Quick acknowledgment + async processing
+    // 1. Start processing immediately (don't await)
+    // 2. Return 200 quickly to WhatsApp
+    // 3. Processing continues in background with proper error handling
+    
+    webhookHandler.handleWebhook(payload, rawBody, signature)
+      .then(() => {
+        addLog({
+          type: 'handleWebhook_completed_successfully',
+        });
+        logger.info({
+          type: 'webhook_processing_completed',
+        });
+      })
+      .catch((error) => {
+        addLog({
+          type: 'handleWebhook_error',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+        logger.error({
+          type: 'webhook_processing_error_caught',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+        
+        // Error handling is done inside handlers
+        // They should send error messages to users
       });
-      
-      logger.info({
-        type: 'webhook_processing_completed',
-      });
-    } catch (error) {
-      addLog({
-        type: 'handleWebhook_error',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      
-      logger.error({
-        type: 'webhook_processing_error_caught',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      
-      // Don't throw - still return 200 to WhatsApp
-      // Error message should have been sent to user by handler
-    }
 
-    // Return 200 OK to acknowledge receipt
+    // Return 200 OK immediately to acknowledge receipt
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     logger.error({
