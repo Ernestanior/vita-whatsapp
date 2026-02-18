@@ -149,11 +149,13 @@ export class TextHandler {
     const commandMap: Record<string, Command> = {
       // Start command
       '/start': Command.START,
+      'start': Command.START,
       '开始': Command.START,
       '開始': Command.START,
       
       // Profile command
       '/profile': Command.PROFILE,
+      'profile': Command.PROFILE,
       '/画像': Command.PROFILE,
       '/畫像': Command.PROFILE,
       '画像': Command.PROFILE,
@@ -163,6 +165,7 @@ export class TextHandler {
       
       // Help command
       '/help': Command.HELP,
+      'help': Command.HELP,
       '/帮助': Command.HELP,
       '/幫助': Command.HELP,
       '帮助': Command.HELP,
@@ -170,6 +173,7 @@ export class TextHandler {
       
       // Stats command
       '/stats': Command.STATS,
+      'stats': Command.STATS,
       '/统计': Command.STATS,
       '/統計': Command.STATS,
       '统计': Command.STATS,
@@ -177,14 +181,15 @@ export class TextHandler {
       
       // History command
       '/history': Command.HISTORY,
+      'history': Command.HISTORY,
       '/历史': Command.HISTORY,
       '/歷史': Command.HISTORY,
       '历史': Command.HISTORY,
       '歷史': Command.HISTORY,
-      'history': Command.HISTORY,
       
       // Settings command
       '/settings': Command.SETTINGS,
+      'settings': Command.SETTINGS,
       '/设置': Command.SETTINGS,
       '/設置': Command.SETTINGS,
       '设置': Command.SETTINGS,
