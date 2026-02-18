@@ -141,37 +141,36 @@ export async function POST(request: NextRequest) {
       entryCount: payload.entry?.length || 0,
     });
 
-    // HYBRID APPROACH: Quick acknowledgment + async processing
-    // 1. Start processing immediately (don't await)
-    // 2. Return 200 quickly to WhatsApp
-    // 3. Processing continues in background with proper error handling
-    
-    webhookHandler.handleWebhook(payload, rawBody, signature)
-      .then(() => {
-        addLog({
-          type: 'handleWebhook_completed_successfully',
-        });
-        logger.info({
-          type: 'webhook_processing_completed',
-        });
-      })
-      .catch((error) => {
-        addLog({
-          type: 'handleWebhook_error',
-          error: error instanceof Error ? error.message : 'Unknown error',
-          stack: error instanceof Error ? error.stack : undefined,
-        });
-        logger.error({
-          type: 'webhook_processing_error_caught',
-          error: error instanceof Error ? error.message : 'Unknown error',
-          stack: error instanceof Error ? error.stack : undefined,
-        });
-        
-        // Error handling is done inside handlers
-        // They should send error messages to users
+    // CORRECT ASYNC APPROACH for Vercel:
+    // Process webhook synchronously but with timeout protection
+    // This ensures the function doesn't terminate before processing completes
+    try {
+      await webhookHandler.handleWebhook(payload, rawBody, signature);
+      
+      addLog({
+        type: 'handleWebhook_completed_successfully',
       });
+      
+      logger.info({
+        type: 'webhook_processing_completed',
+      });
+    } catch (error) {
+      addLog({
+        type: 'handleWebhook_error',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      
+      logger.error({
+        type: 'webhook_processing_error_caught',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      
+      // Error should have been sent to user by handler
+    }
 
-    // Return 200 OK immediately to acknowledge receipt
+    // Return 200 OK to acknowledge receipt
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     logger.error({
