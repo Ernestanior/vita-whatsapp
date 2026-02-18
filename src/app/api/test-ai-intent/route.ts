@@ -1,105 +1,108 @@
 /**
  * Test AI Intent Recognition
- * Tests natural language command detection using OpenAI
+ * Tests natural language command detection using AI (Gemini + GPT fallback)
  */
 
-import { NextResponse } from 'next/server';
-import { OpenAI } from 'openai';
-import { env } from '@/config/env';
+import { NextRequest, NextResponse } from 'next/server';
+import { intentDetector } from '@/lib/ai/intent-detector';
 
-export async function GET() {
+/**
+ * POST - Test a single text input
+ */
+export async function POST(request: NextRequest) {
   try {
-    const openai = new OpenAI({
-      apiKey: env.OPENAI_API_KEY,
+    const body = await request.json();
+    const { text } = body;
+
+    if (!text || typeof text !== 'string') {
+      return NextResponse.json({
+        success: false,
+        error: 'Missing or invalid "text" parameter',
+      }, { status: 400 });
+    }
+
+    const startTime = Date.now();
+    const intent = await intentDetector.detect(text);
+    const responseTime = Date.now() - startTime;
+
+    return NextResponse.json({
+      success: true,
+      text,
+      intent,
+      responseTime,
+      provider: 'gemini-or-openai',
     });
 
-    const systemPrompt = `You are an intent classifier for a nutrition tracking WhatsApp bot.
+  } catch (error) {
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    }, { status: 500 });
+  }
+}
 
-Available commands:
-- STATS: User wants to see statistics, data analysis, summaries, reports about their nutrition
-- HISTORY: User wants to see their meal history, past records, what they ate recently
-- PROFILE: User wants to see or update their personal profile, health info, height, weight
-- HELP: User needs help, instructions, doesn't know how to use the bot
-- START: User wants to start over, begin, reset
-- SETTINGS: User wants to change settings, preferences, language
-- UNKNOWN: None of the above, general conversation
-
-Respond with ONLY the command name (e.g., "STATS", "HISTORY", etc.). No explanation.
-
-Examples:
-User: "我想看一下数据分析" → STATS
-User: "我最近吃了什么" → HISTORY
-User: "我的个人信息" → PROFILE
-User: "怎么用这个" → HELP
-User: "你好" → UNKNOWN
-User: "show me my statistics" → STATS
-User: "what did I eat yesterday" → HISTORY`;
-
+/**
+ * GET - Run comprehensive test suite
+ */
+export async function GET() {
+  try {
     // Test cases from user's screenshot
     const testCases = [
-      '我想看一下数据分析',
-      '我想看一下统计数据',
-      '我最近饮食的统计数据呀',
-      '看看我的统计',
-      '给我看看数据',
-      '我的饮食分析',
-      '最近吃了什么',
-      '历史记录',
-      '我的个人信息',
-      '怎么用这个',
-      'stats',
-      'history',
-      'profile',
-      'help',
-      '我想看看最近的历史记录和统计数据',
-      '帮我分析一下',
-      '你好',
-      '今天天气怎么样',
+      { text: '我想看一下数据分析', expected: 'STATS' },
+      { text: '我想看一下统计数据', expected: 'STATS' },
+      { text: '我最近饮食的统计数据呀', expected: 'STATS' },
+      { text: '看看我的统计', expected: 'STATS' },
+      { text: '给我看看数据', expected: 'STATS' },
+      { text: '我的饮食分析', expected: 'STATS' },
+      { text: '最近吃了什么', expected: 'HISTORY' },
+      { text: '历史记录', expected: 'HISTORY' },
+      { text: '我的个人信息', expected: 'PROFILE' },
+      { text: '怎么用这个', expected: 'HELP' },
+      { text: 'stats', expected: 'STATS' },
+      { text: 'history', expected: 'HISTORY' },
+      { text: 'profile', expected: 'PROFILE' },
+      { text: 'help', expected: 'HELP' },
+      { text: '我想看看最近的历史记录和统计数据', expected: 'HISTORY' },
+      { text: '帮我分析一下', expected: 'STATS' },
+      { text: '你好', expected: 'UNKNOWN' },
+      { text: '今天天气怎么样', expected: 'UNKNOWN' },
     ];
 
     const results = [];
-    let totalTokens = 0;
+    let totalTime = 0;
 
     for (const testCase of testCases) {
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: testCase },
-        ],
-        max_tokens: 10,
-        temperature: 0,
-      });
-
-      const intent = response.choices[0]?.message?.content?.trim().toUpperCase() || 'UNKNOWN';
-      const tokensUsed = response.usage?.total_tokens || 0;
-      totalTokens += tokensUsed;
+      const startTime = Date.now();
+      const intent = await intentDetector.detect(testCase.text);
+      const responseTime = Date.now() - startTime;
+      totalTime += responseTime;
 
       results.push({
-        input: testCase,
-        intent,
-        tokensUsed,
-        correct: intent !== 'UNKNOWN' || testCase === '你好' || testCase === '今天天气怎么样',
+        input: testCase.text,
+        expected: testCase.expected,
+        detected: intent,
+        correct: intent === testCase.expected,
+        responseTime,
       });
     }
 
     const correctCount = results.filter(r => r.correct).length;
     const accuracy = (correctCount / results.length * 100).toFixed(1);
-    const avgTokens = (totalTokens / results.length).toFixed(1);
-    const estimatedCost = (totalTokens / 1000000 * 0.15).toFixed(6); // $0.15 per 1M tokens for gpt-4o-mini
+    const avgTime = (totalTime / results.length).toFixed(0);
 
     return NextResponse.json({
       success: true,
       summary: {
         totalTests: results.length,
         correct: correctCount,
+        failed: results.length - correctCount,
         accuracy: `${accuracy}%`,
-        totalTokens,
-        avgTokensPerCall: avgTokens,
-        estimatedCost: `$${estimatedCost}`,
+        avgResponseTime: `${avgTime}ms`,
+        totalTime: `${totalTime}ms`,
       },
       results,
-      note: 'AI intent recognition is working! Cost is very low (~$0.0001 per call)',
+      note: 'Using Gemini 2.0 Flash (primary) with GPT-4o-mini fallback',
     });
 
   } catch (error) {
