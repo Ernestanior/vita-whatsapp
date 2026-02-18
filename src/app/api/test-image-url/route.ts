@@ -4,39 +4,31 @@
  */
 
 import { NextResponse } from 'next/server';
-import { imageHandler } from '@/lib/whatsapp/image-handler';
 
 export async function GET() {
   try {
     // Use a public food image URL for testing
     const testImageUrl = 'https://images.unsplash.com/photo-1603133872878-684f208fb84b?w=800'; // Fried rice
     
-    // Create a mock message
-    const mockMessage = {
-      from: '6583153431',
-      id: 'test_' + Date.now(),
-      timestamp: Math.floor(Date.now() / 1000).toString(),
-      type: 'image' as const,
-      image: {
-        id: 'test_image',
-        mime_type: 'image/jpeg',
-        sha256: 'test',
-      },
-    };
-
-    const mockContext = {
-      userId: '6583153431',
-      messageId: mockMessage.id,
-      timestamp: new Date(),
-      language: 'zh-CN' as const,
-    };
-
-    // Test image recognition directly
+    console.log('Fetching test image from:', testImageUrl);
+    
+    // Fetch the image
+    const imageResponse = await fetch(testImageUrl);
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to fetch image: ${imageResponse.statusText}`);
+    }
+    
+    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+    console.log('Image fetched, size:', imageBuffer.length);
+    
+    // Test image recognition
     const { foodRecognizer } = await import('@/lib/food-recognition/recognizer');
     
-    console.log('Testing image recognition with URL:', testImageUrl);
-    
-    const result = await foodRecognizer.recognizeFromUrl(testImageUrl);
+    const result = await foodRecognizer.recognizeFood(imageBuffer, {
+      userId: 'test_user',
+      language: 'zh-CN',
+      mealTime: new Date(),
+    });
     
     return NextResponse.json({
       success: true,
