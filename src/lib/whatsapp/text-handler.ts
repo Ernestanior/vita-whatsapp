@@ -54,7 +54,7 @@ export class TextHandler {
       });
 
       // Check if it's a command first (commands should work even during setup)
-      const command = this.recognizeCommand(text);
+      const command = await this.recognizeCommand(text);
       
       logger.info({
         type: 'command_recognized_result',
@@ -141,11 +141,12 @@ export class TextHandler {
   /**
    * Recognize command from text
    * Supports both English and Chinese commands
+   * Uses AI for natural language intent recognition
    */
-  private recognizeCommand(text: string): Command {
+  private async recognizeCommand(text: string): Promise<Command> {
     const normalizedText = text.trim().toLowerCase();
 
-    // Command mappings (English and Chinese)
+    // Exact command mappings (English and Chinese) - fast path
     const commandMap: Record<string, Command> = {
       // Start command
       '/start': Command.START,
@@ -196,7 +197,92 @@ export class TextHandler {
       '設置': Command.SETTINGS,
     };
 
-    return commandMap[normalizedText] || Command.UNKNOWN;
+    // Check exact match first (fast path, no AI needed)
+    const exactMatch = commandMap[normalizedText];
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    // Use AI for natural language intent recognition
+    try {
+      const intent = await this.detectIntentWithAI(text);
+      return intent;
+    } catch (error) {
+      logger.error({
+        type: 'intent_detection_error',
+        text: text.substring(0, 50),
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      // Fallback to UNKNOWN if AI fails
+      return Command.UNKNOWN;
+    }
+  }
+
+  /**
+   * Use AI to detect user intent from natural language
+   * Cost: ~50-100 tokens per call (~$0.0001)
+   */
+  private async detectIntentWithAI(text: string): Promise<Command> {
+    const { OpenAI } = await import('openai');
+    const { env } = await import('@/config/env');
+    
+    const openai = new OpenAI({
+      apiKey: env.OPENAI_API_KEY,
+    });
+
+    const systemPrompt = `You are an intent classifier for a nutrition tracking WhatsApp bot.
+
+Available commands:
+- STATS: User wants to see statistics, data analysis, summaries, reports about their nutrition
+- HISTORY: User wants to see their meal history, past records, what they ate recently
+- PROFILE: User wants to see or update their personal profile, health info, height, weight
+- HELP: User needs help, instructions, doesn't know how to use the bot
+- START: User wants to start over, begin, reset
+- SETTINGS: User wants to change settings, preferences, language
+- UNKNOWN: None of the above, general conversation
+
+Respond with ONLY the command name (e.g., "STATS", "HISTORY", etc.). No explanation.
+
+Examples:
+User: "我想看一下数据分析" → STATS
+User: "我最近吃了什么" → HISTORY
+User: "我的个人信息" → PROFILE
+User: "怎么用这个" → HELP
+User: "你好" → UNKNOWN
+User: "show me my statistics" → STATS
+User: "what did I eat yesterday" → HISTORY`;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: text },
+      ],
+      max_tokens: 10,
+      temperature: 0, // Deterministic
+    });
+
+    const intent = response.choices[0]?.message?.content?.trim().toUpperCase() || 'UNKNOWN';
+
+    logger.info({
+      type: 'ai_intent_detected',
+      text: text.substring(0, 50),
+      intent,
+      tokensUsed: response.usage?.total_tokens || 0,
+    });
+
+    // Map AI response to Command enum
+    const intentMap: Record<string, Command> = {
+      'STATS': Command.STATS,
+      'HISTORY': Command.HISTORY,
+      'PROFILE': Command.PROFILE,
+      'HELP': Command.HELP,
+      'START': Command.START,
+      'SETTINGS': Command.SETTINGS,
+      'UNKNOWN': Command.UNKNOWN,
+    };
+
+    return intentMap[intent] || Command.UNKNOWN;
   }
 
   /**
