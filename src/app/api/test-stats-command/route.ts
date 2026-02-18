@@ -3,7 +3,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { textHandler } from '@/lib/whatsapp/text-handler';
+import { TextHandler } from '@/lib/whatsapp/text-handler';
 import type { Message, MessageContext } from '@/types/whatsapp';
 
 const TEST_USER_ID = '6583153431';
@@ -29,6 +29,7 @@ export async function GET() {
     };
 
     // Call the text handler directly
+    const textHandler = new TextHandler();
     await textHandler.handle(message, context);
 
     return NextResponse.json({
