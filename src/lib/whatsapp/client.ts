@@ -72,6 +72,13 @@ export class WhatsAppClient {
   ): Promise<SendMessageResponse> {
     const url = `${WHATSAPP_API_URL}/${this.phoneNumberId}/messages`;
 
+    logger.info({
+      type: 'sending_whatsapp_message',
+      to,
+      textLength: text.length,
+      text: text.substring(0, 100),
+    });
+
     // Add timeout to fetch
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
@@ -100,12 +107,21 @@ export class WhatsAppClient {
         logger.error({
           type: 'whatsapp_send_message_error',
           to,
+          status: response.status,
           error,
         });
         throw new Error(`Failed to send message: ${error}`);
       }
 
-      return response.json();
+      const result = await response.json();
+      
+      logger.info({
+        type: 'whatsapp_message_sent_successfully',
+        to,
+        messageId: result.messages?.[0]?.id,
+      });
+
+      return result;
     } catch (error) {
       clearTimeout(timeoutId);
       
@@ -117,6 +133,13 @@ export class WhatsAppClient {
         });
         throw new Error('WhatsApp API timeout');
       }
+      
+      logger.error({
+        type: 'whatsapp_send_message_exception',
+        to,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       
       throw error;
     }
