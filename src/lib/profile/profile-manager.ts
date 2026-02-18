@@ -1126,9 +1126,10 @@ Please try again with the correct format.`,
   /**
    * Update user profile with optimistic locking
    * Fixed: Issue #7 - Added version checking to prevent race conditions
+   * Fixed: Issue #8 - Added phone number to UUID conversion
    */
   async updateProfile(
-    userId: string,
+    userIdOrPhone: string,
     updates: HealthProfileUpdate,
     maxRetries: number = 3
   ): Promise<void> {
@@ -1139,6 +1140,32 @@ Please try again with the correct format.`,
     }
 
     const supabase = await createClient();
+
+    // Convert phone number to UUID if needed
+    const isUUID = userIdOrPhone.includes('-');
+    let userId: string;
+    
+    if (isUUID) {
+      userId = userIdOrPhone;
+    } else {
+      // Phone number, need to convert to UUID
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone_number', userIdOrPhone)
+        .maybeSingle();
+
+      if (userError || !user) {
+        logger.warn({
+          type: 'user_not_found_for_update',
+          phone: userIdOrPhone,
+          error: userError?.message,
+        });
+        throw new Error('User not found');
+      }
+
+      userId = user.id;
+    }
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
