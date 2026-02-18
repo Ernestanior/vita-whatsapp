@@ -626,38 +626,89 @@ For now, I automatically detect your language from your messages.`,
       return;
     }
 
-    // Default response for unrecognized input
-    const messages = {
-      'en': `I'm not sure what you mean 🤔
+    // Use AI to respond to general questions
+    try {
+      const aiResponse = await this.getAIResponse(text, context);
+      await whatsappClient.sendTextMessage(message.from, aiResponse);
+    } catch (error) {
+      logger.error({
+        type: 'ai_response_error',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      
+      // Fallback to default response if AI fails
+      const messages = {
+        'en': `I'm not sure what you mean 🤔
 
 Try these:
 • Send 3 numbers for quick setup: \`25 170 65\`
 • Send a food photo for analysis 📸
 • Click a button below for help`,
-      
-      'zh-CN': `我不太明白您的意思 🤔
+        
+        'zh-CN': `我不太明白您的意思 🤔
 
 试试这些：
 • 发送 3 个数字快速设置：\`25 170 65\`
 • 发送食物照片进行分析 📸
 • 点击下方按钮获取帮助`,
-      
-      'zh-TW': `我不太明白您的意思 🤔
+        
+        'zh-TW': `我不太明白您的意思 🤔
 
 試試這些：
 • 發送 3 個數字快速設置：\`25 170 65\`
 • 發送食物照片進行分析 📸
 • 點擊下方按鈕獲取幫助`,
-    };
+      };
 
-    await whatsappClient.sendButtonMessage(
-      message.from,
-      messages[context.language],
-      [
-        { id: 'start', title: '🚀 Get Started' },
-        { id: 'help', title: '❓ Help' },
-      ]
-    );
+      await whatsappClient.sendButtonMessage(
+        message.from,
+        messages[context.language],
+        [
+          { id: 'start', title: '🚀 Get Started' },
+          { id: 'help', title: '❓ Help' },
+        ]
+      );
+    }
+  }
+
+  /**
+   * Get AI response for general conversation
+   */
+  private async getAIResponse(text: string, context: MessageContext): Promise<string> {
+    const { OpenAI } = await import('openai');
+    const { env } = await import('@/config/env');
+    
+    const openai = new OpenAI({
+      apiKey: env.OPENAI_API_KEY,
+    });
+
+    const systemPrompt = context.language === 'zh-CN' || context.language === 'zh-TW'
+      ? `你是 Vita AI，一个友好的营养助手。你的职责是：
+1. 回答用户关于营养、健康、饮食的问题
+2. 引导用户使用你的核心功能：发送食物照片进行分析
+3. 保持简短、友好、有帮助的回复（不超过100字）
+4. 如果用户问你是谁，介绍自己是营养助手，可以分析食物照片
+
+记住：你的核心功能是分析食物照片，所以要适时引导用户使用这个功能。`
+      : `You are Vita AI, a friendly nutrition assistant. Your role is to:
+1. Answer questions about nutrition, health, and diet
+2. Guide users to use your core feature: sending food photos for analysis
+3. Keep responses short, friendly, and helpful (under 100 words)
+4. If asked who you are, introduce yourself as a nutrition assistant that can analyze food photos
+
+Remember: Your core feature is analyzing food photos, so guide users to use this feature when appropriate.`;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: text },
+      ],
+      max_tokens: 200,
+      temperature: 0.7,
+    });
+
+    return response.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
   }
 
   /**
