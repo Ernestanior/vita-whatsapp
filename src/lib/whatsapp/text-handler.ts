@@ -13,6 +13,14 @@ export enum Command {
   STATS = 'stats',
   HISTORY = 'history',
   SETTINGS = 'settings',
+  // Phase 3 commands
+  STREAK = 'streak',
+  BUDGET = 'budget',
+  CARD = 'card',
+  REMINDERS = 'reminders',
+  COMPARE = 'compare',
+  PROGRESS = 'progress',
+  PREFERENCES = 'preferences',
   UNKNOWN = 'unknown',
 }
 
@@ -87,7 +95,7 @@ export class TextHandler {
           command,
         });
 
-        await this.handleCommand(command, message, context);
+        await this.handleCommand(command, message, context, text);
         return;
       }
       
@@ -111,7 +119,7 @@ export class TextHandler {
 
       // Handle other commands
       if (command !== Command.UNKNOWN) {
-        await this.handleCommand(command, message, context);
+        await this.handleCommand(command, message, context, text);
       } else {
         // Try to parse as natural language profile update
         const wasProfileUpdate = await profileManager.parseNaturalLanguageUpdate(
@@ -145,6 +153,9 @@ export class TextHandler {
    */
   private async recognizeCommand(text: string): Promise<Command> {
     const normalizedText = text.trim().toLowerCase();
+    
+    // Extract first word for command matching (to support commands with arguments)
+    const firstWord = normalizedText.split(/\s+/)[0];
 
     // Exact command mappings (English and Chinese) - fast path
     const commandMap: Record<string, Command> = {
@@ -195,15 +206,111 @@ export class TextHandler {
       '/設置': Command.SETTINGS,
       '设置': Command.SETTINGS,
       '設置': Command.SETTINGS,
+      
+      // Phase 3: Streak command
+      '/streak': Command.STREAK,
+      'streak': Command.STREAK,
+      '/连续': Command.STREAK,
+      '/連續': Command.STREAK,
+      '连续': Command.STREAK,
+      '連續': Command.STREAK,
+      '/打卡': Command.STREAK,
+      '打卡': Command.STREAK,
+      
+      // Phase 3: Budget command
+      '/budget': Command.BUDGET,
+      'budget': Command.BUDGET,
+      '/预算': Command.BUDGET,
+      '/預算': Command.BUDGET,
+      '预算': Command.BUDGET,
+      '預算': Command.BUDGET,
+      
+      // Phase 3: Card command
+      '/card': Command.CARD,
+      'card': Command.CARD,
+      '/卡片': Command.CARD,
+      '卡片': Command.CARD,
+      
+      // Phase 3: Reminders command
+      '/reminders': Command.REMINDERS,
+      'reminders': Command.REMINDERS,
+      '/提醒': Command.REMINDERS,
+      '提醒': Command.REMINDERS,
+      
+      // Phase 3: Compare command
+      '/compare': Command.COMPARE,
+      'compare': Command.COMPARE,
+      '/对比': Command.COMPARE,
+      '/對比': Command.COMPARE,
+      '对比': Command.COMPARE,
+      '對比': Command.COMPARE,
+      
+      // Phase 3: Progress command
+      '/progress': Command.PROGRESS,
+      'progress': Command.PROGRESS,
+      '/进度': Command.PROGRESS,
+      '/進度': Command.PROGRESS,
+      '进度': Command.PROGRESS,
+      '進度': Command.PROGRESS,
+      
+      // Phase 3: Preferences command
+      '/preferences': Command.PREFERENCES,
+      'preferences': Command.PREFERENCES,
+      '/偏好': Command.PREFERENCES,
+      '偏好': Command.PREFERENCES,
     };
 
-    // Check exact match first (fast path, no AI needed)
+    // Check exact match on full text first
     const exactMatch = commandMap[normalizedText];
     if (exactMatch) {
       return exactMatch;
     }
+    
+    // Check first word match (for commands with arguments like "budget set 1800")
+    const firstWordMatch = commandMap[firstWord];
+    if (firstWordMatch) {
+      return firstWordMatch;
+    }
 
-    // Use AI for natural language intent recognition
+    // CRITICAL FIX: Check for Phase 3 commands with partial matching
+    // This ensures commands work even if AI fails or doesn't recognize them
+    const phase3Keywords = {
+      streak: ['streak', '连续', '連續', '打卡'],
+      budget: ['budget', '预算', '預算'],
+      card: ['card', '卡片'],
+      reminders: ['reminders', 'reminder', '提醒'],
+      compare: ['compare', '对比', '對比'],
+      progress: ['progress', '进度', '進度'],
+      preferences: ['preferences', 'preference', '偏好', 'settings', '设置', '設置'],
+    };
+
+    for (const [command, keywords] of Object.entries(phase3Keywords)) {
+      for (const keyword of keywords) {
+        if (normalizedText.includes(keyword)) {
+          logger.info({
+            type: 'phase3_command_matched_by_keyword',
+            keyword,
+            command,
+            text: text.substring(0, 50),
+          });
+          
+          // Map to Command enum
+          const commandMapping: Record<string, Command> = {
+            'streak': Command.STREAK,
+            'budget': Command.BUDGET,
+            'card': Command.CARD,
+            'reminders': Command.REMINDERS,
+            'compare': Command.COMPARE,
+            'progress': Command.PROGRESS,
+            'preferences': Command.PREFERENCES,
+          };
+          
+          return commandMapping[command] || Command.UNKNOWN;
+        }
+      }
+    }
+
+    // Use AI for natural language intent recognition (only for non-Phase3 commands)
     try {
       const intent = await this.detectIntentWithAI(text);
       return intent;
@@ -247,7 +354,8 @@ export class TextHandler {
   private async handleCommand(
     command: Command,
     message: Message,
-    context: MessageContext
+    context: MessageContext,
+    originalText: string
   ): Promise<void> {
     logger.info({
       type: 'command_recognized',
@@ -278,6 +386,17 @@ export class TextHandler {
 
       case Command.SETTINGS:
         await this.handleSettingsCommand(message.from, context);
+        break;
+
+      // Phase 3 commands
+      case Command.STREAK:
+      case Command.BUDGET:
+      case Command.CARD:
+      case Command.REMINDERS:
+      case Command.COMPARE:
+      case Command.PROGRESS:
+      case Command.PREFERENCES:
+        await this.handlePhase3Command(command, message.from, context, originalText);
         break;
 
       default:
@@ -512,35 +631,56 @@ To update your profile, just tell me in natural language:
     context: MessageContext
   ): Promise<void> {
     const messages = {
-      'en': `🤖 Vita AI Help
+      'en': `🤖 *Vita AI Help*
 
-*How to Use:*
-📸 Send a photo of your food to get instant nutrition analysis
-💬 Tell me about yourself to set up your profile
-🎯 Get personalized health recommendations
+*Core Features:*
+📸 Send food photo → Get instant analysis
+💬 Tell me about yourself → Set up profile
+
+*Commands:*
+• \`streak\` - View your logging streak
+• \`stats\` - See your statistics
+• \`budget\` - Track daily calories
+• \`profile\` - View/update profile
+• \`history\` - Recent meals
+• \`preferences\` - Dietary preferences
 
 *Quick Actions:*
-Use the buttons below to get started!`,
+Use the buttons below!`,
       
-      'zh-CN': `🤖 Vita AI 帮助
+      'zh-CN': `🤖 *Vita AI 帮助*
 
-*使用方法：*
-📸 发送食物照片获取即时营养分析
-💬 告诉我您的信息来设置画像
-🎯 获得个性化健康建议
+*核心功能：*
+📸 发送食物照片 → 获取即时分析
+💬 告诉我您的信息 → 设置画像
+
+*命令：*
+• \`连续\` - 查看打卡连续
+• \`统计\` - 查看统计数据
+• \`预算\` - 追踪每日卡路里
+• \`画像\` - 查看/更新画像
+• \`历史\` - 最近餐食
+• \`偏好\` - 饮食偏好
 
 *快速操作：*
-使用下方按钮开始！`,
+使用下方按钮！`,
       
-      'zh-TW': `🤖 Vita AI 幫助
+      'zh-TW': `🤖 *Vita AI 幫助*
 
-*使用方法：*
-📸 發送食物照片獲取即時營養分析
-💬 告訴我您的信息來設置畫像
-🎯 獲得個性化健康建議
+*核心功能：*
+📸 發送食物照片 → 獲取即時分析
+💬 告訴我您的信息 → 設置畫像
+
+*命令：*
+• \`連續\` - 查看打卡連續
+• \`統計\` - 查看統計數據
+• \`預算\` - 追蹤每日卡路里
+• \`畫像\` - 查看/更新畫像
+• \`歷史\` - 最近餐食
+• \`偏好\` - 飲食偏好
 
 *快速操作：*
-使用下方按鈕開始！`,
+使用下方按鈕！`,
     };
 
     await whatsappClient.sendButtonMessage(
@@ -549,7 +689,7 @@ Use the buttons below to get started!`,
       [
         { id: 'start', title: '🚀 Get Started' },
         { id: 'profile', title: '👤 My Profile' },
-        { id: 'stats', title: '📊 Statistics' },
+        { id: 'streak', title: '🔥 My Streak' },
       ]
     );
   }
@@ -812,6 +952,39 @@ Start tracking by sending photos of your meals!`,
       userId,
       messages[context.language]
     );
+  }
+
+  /**
+   * Handle Phase 3 commands
+   */
+  private async handlePhase3Command(
+    command: Command,
+    userId: string,
+    context: MessageContext,
+    originalText: string
+  ): Promise<void> {
+    const { createPhase3CommandHandler } = await import('@/lib/phase3/commands/command-handler');
+    const handler = await createPhase3CommandHandler();
+    
+    // Map Command enum to Phase3Command type
+    const commandMap: Record<string, string> = {
+      [Command.STREAK]: 'streak',
+      [Command.BUDGET]: 'budget',
+      [Command.CARD]: 'card',
+      [Command.REMINDERS]: 'reminders',
+      [Command.COMPARE]: 'compare',
+      [Command.PROGRESS]: 'progress',
+      [Command.PREFERENCES]: 'preferences',
+    };
+    
+    const phase3Command = commandMap[command] as any;
+    if (phase3Command) {
+      // Parse arguments from original text
+      const parts = originalText.trim().split(/\s+/);
+      const args = parts.slice(1); // Skip the command itself
+      
+      await handler.handleCommand(phase3Command, userId, context.language, args);
+    }
   }
 
   /**
