@@ -1080,21 +1080,29 @@ For now, I automatically detect your language from your messages.`,
       const aiResponse = await intelligentConversation.generateResponse(text, message.from, context);
       await whatsappClient.sendTextMessage(message.from, aiResponse);
       
-      // After AI response, try to extract and save preferences
-      const { PreferenceService } = await import('@/lib/phase3/services/preference-manager');
-      const supabase = await (await import('@/lib/supabase/server')).createClient();
-      const preferenceService = new PreferenceService(supabase);
-      
-      // Get user UUID
-      const { data: user } = await supabase
-        .from('users')
-        .select('id')
-        .eq('phone_number', message.from)
-        .maybeSingle();
-      
-      if (user) {
-        // Try to extract preferences from the conversation
-        await preferenceService.extractFromConversation(user.id, text, context.language);
+      // After AI response, try to extract and save preferences (don't let this fail the whole flow)
+      try {
+        const { PreferenceService } = await import('@/lib/phase3/services/preference-manager');
+        const supabase = await (await import('@/lib/supabase/server')).createClient();
+        const preferenceService = new PreferenceService(supabase);
+        
+        // Get user UUID
+        const { data: user } = await supabase
+          .from('users')
+          .select('id')
+          .eq('phone_number', message.from)
+          .maybeSingle();
+        
+        if (user) {
+          // Try to extract preferences from the conversation
+          await preferenceService.extractFromConversation(user.id, text, context.language);
+        }
+      } catch (prefError) {
+        // Log but don't fail - preference extraction is optional
+        logger.warn({
+          type: 'preference_extraction_failed',
+          error: prefError instanceof Error ? prefError.message : 'Unknown error',
+        });
       }
     } catch (error) {
       logger.error({
