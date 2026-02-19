@@ -1258,6 +1258,13 @@ Please try again with the correct format.`,
     const normalized = text.toLowerCase();
     const updates: HealthProfileUpdate = {};
 
+    // Extract gender
+    if (normalized.includes('女') || normalized.includes('female') || normalized.includes('woman') || normalized.includes('girl')) {
+      updates.gender = 'female';
+    } else if (normalized.includes('男') || normalized.includes('male') || normalized.includes('man') || normalized.includes('boy')) {
+      updates.gender = 'male';
+    }
+
     // Extract weight
     const weightMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:kg|公斤|kilogram)/i);
     if (weightMatch) {
@@ -1285,13 +1292,13 @@ Please try again with the correct format.`,
       const messages = {
         'en': `✅ Profile updated successfully!
 
-${updates.height ? `• Height: ${updates.height} cm\n` : ''}${updates.weight ? `• Weight: ${updates.weight} kg\n` : ''}`,
+${updates.gender ? `• Gender: ${updates.gender === 'female' ? 'Female' : 'Male'}\n` : ''}${updates.height ? `• Height: ${updates.height} cm\n` : ''}${updates.weight ? `• Weight: ${updates.weight} kg\n` : ''}`,
         'zh-CN': `✅ 画像更新成功！
 
-${updates.height ? `• 身高：${updates.height} 厘米\n` : ''}${updates.weight ? `• 体重：${updates.weight} 公斤\n` : ''}`,
+${updates.gender ? `• 性别：${updates.gender === 'female' ? '女' : '男'}\n` : ''}${updates.height ? `• 身高：${updates.height} 厘米\n` : ''}${updates.weight ? `• 体重：${updates.weight} 公斤\n` : ''}`,
         'zh-TW': `✅ 畫像更新成功！
 
-${updates.height ? `• 身高：${updates.height} 厘米\n` : ''}${updates.weight ? `• 體重：${updates.weight} 公斤\n` : ''}`,
+${updates.gender ? `• 性別：${updates.gender === 'female' ? '女' : '男'}\n` : ''}${updates.height ? `• 身高：${updates.height} 厘米\n` : ''}${updates.weight ? `• 體重：${updates.weight} 公斤\n` : ''}`,
       };
 
       await whatsappClient.sendTextMessage(userId, messages[language]);
