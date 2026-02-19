@@ -1075,7 +1075,9 @@ For now, I automatically detect your language from your messages.`,
 
     // Use AI to respond to general questions
     try {
-      const aiResponse = await this.getAIResponse(text, context);
+      // Use intelligent conversation handler with full context
+      const { intelligentConversation } = await import('@/lib/ai/intelligent-conversation');
+      const aiResponse = await intelligentConversation.generateResponse(text, message.from, context);
       await whatsappClient.sendTextMessage(message.from, aiResponse);
     } catch (error) {
       logger.error({
