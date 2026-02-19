@@ -1079,6 +1079,23 @@ For now, I automatically detect your language from your messages.`,
       const { intelligentConversation } = await import('@/lib/ai/intelligent-conversation');
       const aiResponse = await intelligentConversation.generateResponse(text, message.from, context);
       await whatsappClient.sendTextMessage(message.from, aiResponse);
+      
+      // After AI response, try to extract and save preferences
+      const { PreferenceService } = await import('@/lib/phase3/services/preference-manager');
+      const supabase = await (await import('@/lib/supabase/server')).createClient();
+      const preferenceService = new PreferenceService(supabase);
+      
+      // Get user UUID
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone_number', message.from)
+        .maybeSingle();
+      
+      if (user) {
+        // Try to extract preferences from the conversation
+        await preferenceService.extractFromConversation(user.id, text, context.language);
+      }
     } catch (error) {
       logger.error({
         type: 'ai_response_error',
