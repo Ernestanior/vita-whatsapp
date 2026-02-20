@@ -205,6 +205,367 @@ export interface Database {
           created_at?: string
         }
       }
+      user_preferences: {
+        Row: {
+          user_id: string
+          dietary_type: string[]
+          allergies: Json
+          eating_habits: Json
+          minimal_mode: boolean
+          language_preference: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          user_id: string
+          dietary_type?: string[]
+          allergies?: Json
+          eating_habits?: Json
+          minimal_mode?: boolean
+          language_preference?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          user_id?: string
+          dietary_type?: string[]
+          allergies?: Json
+          eating_habits?: Json
+          minimal_mode?: boolean
+          language_preference?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      daily_budgets: {
+        Row: {
+          id: string
+          user_id: string
+          date: string
+          calorie_target: number
+          calories_consumed: number
+          budget_enabled: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          date: string
+          calorie_target: number
+          calories_consumed?: number
+          budget_enabled?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          date?: string
+          calorie_target?: number
+          calories_consumed?: number
+          budget_enabled?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      user_streaks: {
+        Row: {
+          user_id: string
+          current_streak: number
+          longest_streak: number
+          last_log_date: string | null
+          streak_freezes_available: number
+          streak_freeze_reset_date: string | null
+          comeback_streak: number
+          days_active: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          user_id: string
+          current_streak?: number
+          longest_streak?: number
+          last_log_date?: string | null
+          streak_freezes_available?: number
+          streak_freeze_reset_date?: string | null
+          comeback_streak?: number
+          days_active?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          user_id?: string
+          current_streak?: number
+          longest_streak?: number
+          last_log_date?: string | null
+          streak_freezes_available?: number
+          streak_freeze_reset_date?: string | null
+          comeback_streak?: number
+          days_active?: number
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      achievements: {
+        Row: {
+          id: string
+          user_id: string
+          achievement_type: string
+          achievement_tier: string
+          earned_date: string
+          metadata: Json
+          share_count: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          achievement_type: string
+          achievement_tier?: string
+          earned_date?: string
+          metadata?: Json
+          share_count?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          achievement_type?: string
+          achievement_tier?: string
+          earned_date?: string
+          metadata?: Json
+          share_count?: number
+          created_at?: string
+        }
+      }
+      reminders: {
+        Row: {
+          id: string
+          user_id: string
+          reminder_type: string
+          scheduled_time: string
+          enabled: boolean
+          quiet_hours_start: string
+          quiet_hours_end: string
+          effectiveness_score: number
+          last_sent_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          reminder_type: string
+          scheduled_time: string
+          enabled?: boolean
+          quiet_hours_start?: string
+          quiet_hours_end?: string
+          effectiveness_score?: number
+          last_sent_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          reminder_type?: string
+          scheduled_time?: string
+          enabled?: boolean
+          quiet_hours_start?: string
+          quiet_hours_end?: string
+          effectiveness_score?: number
+          last_sent_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      visual_cards: {
+        Row: {
+          id: string
+          user_id: string
+          card_type: string
+          generation_date: string
+          image_url: string
+          data_snapshot: Json
+          share_count: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          card_type: string
+          generation_date?: string
+          image_url: string
+          data_snapshot?: Json
+          share_count?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          card_type?: string
+          generation_date?: string
+          image_url?: string
+          data_snapshot?: Json
+          share_count?: number
+          created_at?: string
+        }
+      }
+      feature_discovery: {
+        Row: {
+          id: string
+          user_id: string
+          feature_name: string
+          introduction_date: string
+          introduction_count: number
+          user_engaged: boolean
+          last_mentioned_date: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          feature_name: string
+          introduction_date?: string
+          introduction_count?: number
+          user_engaged?: boolean
+          last_mentioned_date?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          feature_name?: string
+          introduction_date?: string
+          introduction_count?: number
+          user_engaged?: boolean
+          last_mentioned_date?: string
+          created_at?: string
+        }
+      }
+      user_engagement_metrics: {
+        Row: {
+          user_id: string
+          total_meals_logged: number
+          days_active: number
+          features_enabled: string[]
+          last_active_date: string | null
+          engagement_score: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          user_id: string
+          total_meals_logged?: number
+          days_active?: number
+          features_enabled?: string[]
+          last_active_date?: string | null
+          engagement_score?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          user_id?: string
+          total_meals_logged?: number
+          days_active?: number
+          features_enabled?: string[]
+          last_active_date?: string | null
+          engagement_score?: number
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      social_connections: {
+        Row: {
+          id: string
+          user_id: string
+          friend_id: string
+          connection_type: string
+          status: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          friend_id: string
+          connection_type: string
+          status?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          friend_id?: string
+          connection_type?: string
+          status?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      community_challenges: {
+        Row: {
+          id: string
+          challenge_type: string
+          start_date: string
+          end_date: string
+          completion_criteria: Json
+          participants_count: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          challenge_type: string
+          start_date: string
+          end_date: string
+          completion_criteria?: Json
+          participants_count?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          challenge_type?: string
+          start_date?: string
+          end_date?: string
+          completion_criteria?: Json
+          participants_count?: number
+          created_at?: string
+        }
+      }
+      user_challenge_progress: {
+        Row: {
+          id: string
+          user_id: string
+          challenge_id: string
+          progress_value: number
+          completion_status: string
+          rank: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          challenge_id: string
+          progress_value?: number
+          completion_status?: string
+          rank?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          challenge_id?: string
+          progress_value?: number
+          completion_status?: string
+          rank?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
     Functions: {
       increment_usage: {

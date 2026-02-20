@@ -38,6 +38,18 @@ interface NutritionBudget {
   sodiumTotal: number;
 }
 
+export interface Phase3Data {
+  streak?: {
+    current: number;
+    longest: number;
+  };
+  budget?: NutritionBudget;
+  achievements?: Array<{
+    emoji: string;
+    title: string;
+  }>;
+}
+
 export class ResponseFormatterSG {
   /**
    * Format response with personality and actionable insights
@@ -46,7 +58,8 @@ export class ResponseFormatterSG {
     result: FoodRecognitionResult,
     rating: HealthRating,
     personality: CoachPersonality['id'] = 'uncle',
-    budget?: NutritionBudget
+    budget?: NutritionBudget,
+    phase3Data?: Phase3Data
   ): string {
     const score = rating.score;
     const emoji = this.getScoreEmoji(score);
@@ -55,13 +68,13 @@ export class ResponseFormatterSG {
     // Build response based on personality
     switch (personality) {
       case 'uncle':
-        return this.formatUncleStyle(result, rating, emoji, grade, budget);
+        return this.formatUncleStyle(result, rating, emoji, grade, budget, phase3Data);
       case 'hardcore':
-        return this.formatHardcoreStyle(result, rating, emoji, grade, budget);
+        return this.formatHardcoreStyle(result, rating, emoji, grade, budget, phase3Data);
       case 'gentle':
-        return this.formatGentleStyle(result, rating, emoji, grade, budget);
+        return this.formatGentleStyle(result, rating, emoji, grade, budget, phase3Data);
       default:
-        return this.formatUncleStyle(result, rating, emoji, grade, budget);
+        return this.formatUncleStyle(result, rating, emoji, grade, budget, phase3Data);
     }
   }
 
@@ -73,7 +86,8 @@ export class ResponseFormatterSG {
     rating: HealthRating,
     emoji: string,
     grade: string,
-    budget?: NutritionBudget
+    budget?: NutritionBudget,
+    phase3Data?: Phase3Data
   ): string {
     const food = result.foods[0];
     const total = result.totalNutrition;
@@ -92,6 +106,11 @@ export class ResponseFormatterSG {
     
     response += `\n🍽️ *${food.nameLocal || food.name}*\n`;
     response += `${total.calories.min}-${total.calories.max} kcal\n\n`;
+    
+    // Phase 3: Streak info (keep it minimal - max 1 line)
+    if (phase3Data?.streak && phase3Data.streak.current > 0) {
+      response += `🔥 ${phase3Data.streak.current} day streak!\n\n`;
+    }
     
     // Budget system
     if (budget) {
@@ -133,7 +152,8 @@ export class ResponseFormatterSG {
     rating: HealthRating,
     emoji: string,
     grade: string,
-    budget?: NutritionBudget
+    budget?: NutritionBudget,
+    phase3Data?: Phase3Data
   ): string {
     const food = result.foods[0];
     const total = result.totalNutrition;
@@ -163,7 +183,8 @@ export class ResponseFormatterSG {
     rating: HealthRating,
     emoji: string,
     grade: string,
-    budget?: NutritionBudget
+    budget?: NutritionBudget,
+    phase3Data?: Phase3Data
   ): string {
     const food = result.foods[0];
     const total = result.totalNutrition;

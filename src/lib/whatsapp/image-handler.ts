@@ -231,7 +231,14 @@ export class ImageHandler {
         recordId
       );
 
-      // 14. Progressive profiling - ask for info at the right time
+      // 14. Phase 3: Call services after meal log
+      await this.callPhase3Services(
+        context.userId,
+        recognitionResult,
+        healthRating
+      );
+
+      // 15. Progressive profiling - ask for info at the right time
       await this.checkAndSendProgressivePrompt(context.userId, context.language);
 
       // Clear timeout warning
@@ -844,6 +851,200 @@ Type "upgrade" to learn more, or come back tomorrow for ${quotaResult.limit} mor
     }
 
     await whatsappClient.sendTextMessage(context.userId, message);
+  }
+
+  /**
+   * Call Phase 3 services after meal log
+   */
+  private async callPhase3Services(
+    userId: string,
+    result: FoodRecognitionResult,
+    rating: HealthRating
+  ): Promise<void> {
+    try {
+      logger.info({
+        type: 'phase3_services_calling',
+        userId,
+      });
+
+      const supabase = await createClient();
+      const { ServiceContainer } = await import('@/lib/phase3/service-container');
+      const container = ServiceContainer.getInstance(supabase);
+
+      // Get user UUID
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone_number', userId)
+        .maybeSingle();
+
+      if (!user) {
+        logger.warn({
+          type: 'phase3_user_not_found',
+          userId,
+        });
+        return;
+      }
+
+      const userUuid = user.id;
+
+      // 1. Update streak
+      try {
+        const streakManager = container.getStreakManager();
+        const streakUpdate = await streakManager.updateStreak(userUuid);
+        
+        logger.info({
+          type: 'phase3_streak_updated',
+          userId,
+          userUuid,
+          currentStreak: streakUpdate.currentStreak,
+          isNewRecord: streakUpdate.isNewRecord,
+        });
+
+        // Send streak milestone message if achieved
+        if (streakUpdate.milestoneReached) {
+          await whatsappClient.sendTextMessage(
+            userId,
+            `🔥 ${streakUpdate.message}`
+          );
+        }
+
+        // Send achievement message if earned
+        if (streakUpdate.achievementEarned) {
+          const ach = streakUpdate.achievementEarned;
+          await whatsappClient.sendTextMessage(
+            userId,
+            `🎉 ${ach.emoji} *${ach.title}*\n\n${ach.description}`
+          );
+        }
+      } catch (error) {
+        logger.error({
+          type: 'phase3_streak_update_error',
+          userId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+
+      // 2. Update budget if enabled
+      try {
+        const budgetTracker = container.getBudgetTracker();
+        const budgetStatus = await budgetTracker.getBudgetStatus(userUuid);
+        
+        if (budgetStatus.enabled) {
+          const calories = Math.round(
+            (result.totalNutrition.calories.min + result.totalNutrition.calories.max) / 2
+          );
+          
+          const updatedBudget = await budgetTracker.updateAfterMeal(userUuid, calories);
+          
+          logger.info({
+            type: 'phase3_budget_updated',
+            userId,
+            userUuid,
+            calories,
+            remaining: updatedBudget.remaining,
+            status: updatedBudget.status,
+          });
+
+          // Send budget warning if approaching limit or over
+          if (updatedBudget.status === 'approaching_limit' || updatedBudget.status === 'over_budget') {
+            if (updatedBudget.message) {
+              await whatsappClient.sendTextMessage(userId, updatedBudget.message);
+            }
+          }
+        }
+      } catch (error) {
+        logger.error({
+          type: 'phase3_budget_update_error',
+          userId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+
+      // 3. Check for feature introductions
+      try {
+        const featureDiscovery = container.getFeatureDiscovery();
+        
+        // Get user context
+        const { data: foodRecords } = await supabase
+          .from('food_records')
+          .select('id')
+          .eq('user_id', userUuid);
+
+        const { data: streakData } = await supabase
+          .from('user_streaks')
+          .select('current_streak, days_active')
+          .eq('user_id', userUuid)
+          .maybeSingle();
+
+        const userContext = {
+          userId: userUuid,
+          totalMealsLogged: foodRecords?.length || 0,
+          currentStreak: streakData?.current_streak || 0,
+          daysActive: streakData?.days_active || 0,
+          lastActionType: 'meal_log' as const,
+        };
+
+        const introduction = await featureDiscovery.checkForIntroduction(userContext);
+        
+        if (introduction) {
+          logger.info({
+            type: 'phase3_feature_introduction',
+            userId,
+            userUuid,
+            featureName: introduction.featureName,
+          });
+
+          await whatsappClient.sendTextMessage(userId, introduction.message);
+        }
+      } catch (error) {
+        logger.error({
+          type: 'phase3_feature_discovery_error',
+          userId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+
+      // 4. Check allergens
+      try {
+        const preferenceManager = container.getPreferenceManager();
+        const foodNames = result.foods.map(f => f.nameLocal || f.name);
+        
+        const warnings = await preferenceManager.checkAllergens(userUuid, foodNames);
+        
+        if (warnings.length > 0) {
+          logger.info({
+            type: 'phase3_allergen_warnings',
+            userId,
+            userUuid,
+            warnings: warnings.map(w => w.allergen),
+          });
+
+          for (const warning of warnings) {
+            await whatsappClient.sendTextMessage(userId, `⚠️ ${warning.message}`);
+          }
+        }
+      } catch (error) {
+        logger.error({
+          type: 'phase3_allergen_check_error',
+          userId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+
+      logger.info({
+        type: 'phase3_services_completed',
+        userId,
+        userUuid,
+      });
+    } catch (error) {
+      logger.error({
+        type: 'phase3_services_error',
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      // Don't throw - Phase 3 features should not break main flow
+    }
   }
 
   /**
