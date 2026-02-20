@@ -92,8 +92,7 @@ export async function GET() {
       // Format response
       const formattedResponse = responseFormatterSG.formatResponse(
         recognitionResponse.result,
-        healthRating,
-        'uncle'
+        healthRating
       );
 
       const processingTime = Date.now() - startTime;

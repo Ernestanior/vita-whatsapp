@@ -258,6 +258,54 @@ export class WhatsAppClient {
   }
 
   /**
+   * Send image message by URL
+   */
+  async sendImageMessage(
+    to: string,
+    imageUrl: string,
+    caption?: string
+  ): Promise<SendMessageResponse> {
+    const url = `${WHATSAPP_API_URL}/${this.phoneNumberId}/messages`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const body: any = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'image',
+        image: { link: imageUrl },
+      };
+      if (caption) body.image.caption = caption;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.token}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const error = await response.text();
+        logger.error({ type: 'whatsapp_send_image_error', to, error });
+        throw new Error(`Failed to send image: ${error}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
+    }
+  }
+
+  /**
    * Send typing indicator
    */
   async sendTypingIndicator(to: string): Promise<void> {

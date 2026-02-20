@@ -168,15 +168,10 @@ export async function GET() {
     results.push({ step: '5. Testing response formatter...', status: 'info' });
 
     try {
-      const { responseFormatterSG, Phase3Data } = await import('@/lib/whatsapp/response-formatter-sg');
+      const { responseFormatterSG } = await import('@/lib/whatsapp/response-formatter-sg');
 
       results.push({
         step: '   ✓ Response formatter loaded',
-        status: 'success',
-      });
-
-      results.push({
-        step: '   ✓ Phase3Data interface available',
         status: 'success',
       });
     } catch (err: any) {

@@ -61,8 +61,6 @@ export class MessageRouter {
           break;
 
         case 'audio':
-        case 'voice':
-          // Handle voice messages - for now, prompt user to use text
           await this.handleVoiceMessage(message, context);
           break;
 
@@ -85,58 +83,79 @@ export class MessageRouter {
   }
 
   /**
-   * Handle voice/audio messages
+   * Handle voice/audio messages — transcribe and process as text
    */
   private async handleVoiceMessage(
     message: Message,
     context: MessageContext
   ): Promise<void> {
-    const messages = {
-      'en': `🎤 Voice message received!
+    const audioId = message.audio?.id;
+    if (!audioId) {
+      logger.warn({ type: 'voice_no_audio_id', messageId: message.id });
+      return;
+    }
 
-I can't process voice messages yet, but you can:
+    try {
+      const { whatsappClient } = await import('./client');
 
-📝 Type: \`25 170 65\`
-(age height weight)
+      // Acknowledge
+      const ackMsg = context.language === 'en'
+        ? '🎤 Got your voice message, transcribing...'
+        : '🎤 收到语音，正在转文字...';
+      await whatsappClient.sendTextMessage(context.userId, ackMsg);
 
-Or
+      // Download audio
+      const audioBuffer = await whatsappClient.downloadMedia(audioId);
 
-📸 Send a food photo to start
+      // Transcribe with OpenAI Whisper
+      const { default: OpenAI } = await import('openai');
+      const { env } = await import('@/config/env');
+      const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
-Coming soon: Voice recognition! 🚀`,
-      
-      'zh-CN': `🎤 收到语音消息！
+      const file = new File([new Uint8Array(audioBuffer)], 'voice.ogg', { type: message.audio?.mime_type || 'audio/ogg' });
 
-我暂时还不能处理语音消息，但您可以：
+      const transcription = await openai.audio.transcriptions.create({
+        model: 'whisper-1',
+        file,
+        language: context.language === 'en' ? 'en' : 'zh',
+      });
 
-📝 输入：\`25 170 65\`
-（年龄 身高 体重）
+      const text = transcription.text?.trim();
+      if (!text) {
+        const errMsg = context.language === 'en'
+          ? "Couldn't understand the voice message. Try again or type it out."
+          : '无法识别语音内容，请重试或直接输入文字。';
+        await whatsappClient.sendTextMessage(context.userId, errMsg);
+        return;
+      }
 
-或者
+      logger.info({
+        type: 'voice_transcribed',
+        userId: context.userId,
+        text: text.substring(0, 50),
+      });
 
-📸 发送食物照片开始
+      // Process transcribed text as a regular text message
+      const textMessage: Message = {
+        ...message,
+        type: 'text',
+        text: { body: text },
+      };
 
-即将推出：语音识别！🚀`,
-      
-      'zh-TW': `🎤 收到語音消息！
+      await this.textHandler.handle(textMessage, context);
+    } catch (error) {
+      logger.error({
+        type: 'voice_processing_error',
+        userId: context.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
 
-我暫時還不能處理語音消息，但您可以：
-
-📝 輸入：\`25 170 65\`
-（年齡 身高 體重）
-
-或者
-
-📸 發送食物照片開始
-
-即將推出：語音識別！🚀`,
-    };
-
-    const { whatsappClient } = await import('./client');
-    await whatsappClient.sendTextMessage(
-      context.userId,
-      messages[context.language]
-    );
+      const { whatsappClient } = await import('./client');
+      const errMsg = context.language === 'en'
+        ? '❌ Failed to process voice message. Please try again or send text.'
+        : '❌ 语音处理失败，请重试或发送文字。';
+      await whatsappClient.sendTextMessage(context.userId, errMsg);
+    }
   }
 
   /**

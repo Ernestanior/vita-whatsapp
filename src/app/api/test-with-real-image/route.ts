@@ -108,8 +108,7 @@ export async function GET() {
 
     const formattedResponse = responseFormatterSG.formatResponse(
       recognitionResponse.result,
-      healthRating,
-      'uncle'
+      healthRating
     );
 
     results.push({

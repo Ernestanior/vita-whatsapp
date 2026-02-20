@@ -312,6 +312,88 @@ export class FoodRecognizer {
       },
     };
   }
+
+  /**
+   * Recognize food from text description (no image)
+   * e.g. "午饭吃了鸡饭" or "I had chicken rice for lunch"
+   */
+  async recognizeFoodFromText(
+    text: string,
+    context: RecognitionContext
+  ): Promise<RecognitionResponse> {
+    const startTime = Date.now();
+
+    try {
+      logger.info({ userId: context.userId, text: text.substring(0, 50) }, 'Starting text food recognition');
+
+      const systemPrompt = buildFoodRecognitionPrompt({
+        language: context.language,
+        mealTime: context.mealTime,
+      });
+
+      const userPrompt = `The user described what they ate in text (no image). Based on the description, estimate the nutrition as accurately as possible using your Singapore food database knowledge.
+
+User said: "${text}"
+
+Return the same JSON format as image recognition. Set confidence to 70 for text-based estimates. If the description is vague, use standard Singapore hawker portions.`;
+
+      const response = await Promise.race([
+        openai.chat.completions.create({
+          model: this.MODEL,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          max_tokens: this.MAX_TOKENS,
+          temperature: this.TEMPERATURE,
+          response_format: { type: 'json_object' },
+        }),
+        this.createTimeoutPromise(),
+      ]);
+
+      const processingTime = Date.now() - startTime;
+      const tokensUsed = response.usage?.total_tokens || 0;
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        return this.createErrorResponse(
+          ErrorType.AI_API_ERROR,
+          'Failed to get response from AI',
+          'Please try again.'
+        );
+      }
+
+      const result = JSON.parse(content) as FoodRecognitionResult;
+
+      const validationError = this.validateResult(result);
+      if (validationError) {
+        return this.createErrorResponse(ErrorType.AI_API_ERROR, validationError);
+      }
+
+      const enrichedResult = this.enrichResult(result, context);
+
+      logger.info({
+        foodCount: enrichedResult.foods.length,
+        processingTime,
+      }, 'Text food recognition completed');
+
+      return {
+        success: true,
+        result: enrichedResult,
+        tokensUsed,
+        processingTime,
+      };
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      logger.error({ error, userId: context.userId, processingTime }, 'Text food recognition failed');
+
+      if (error instanceof Error && error.message === 'API_TIMEOUT') {
+        return this.createErrorResponse(ErrorType.TIMEOUT_ERROR, 'Recognition timed out. Please try again.');
+      }
+
+      return this.createErrorResponse(ErrorType.AI_API_ERROR, 'Failed to recognize food from text.');
+    }
+  }
 }
 
 export const foodRecognizer = new FoodRecognizer();

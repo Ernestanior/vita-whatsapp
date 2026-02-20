@@ -68,13 +68,9 @@ export async function GET(request: NextRequest) {
 
     for (const user of users) {
       try {
-        // Check if user has custom digest time
-        const digestTime = user.digest_time || '21:00:00';
-        const currentHour = today.getHours();
-        const digestHour = parseInt(digestTime.split(':')[0]);
-
-        // Skip if not the user's digest time (allow 1 hour window)
-        if (Math.abs(currentHour - digestHour) > 1) {
+        // Smart timing: send digest 2-3 hours after last meal, or at digest_time
+        const shouldSend = await shouldSendDigestNow(user.user_id, user.digest_time, today);
+        if (!shouldSend) {
           results.skipped++;
           continue;
         }
@@ -169,6 +165,57 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Smart digest timing: send 2-3 hours after last meal, or fallback to digest_time
+ */
+async function shouldSendDigestNow(
+  userId: string,
+  digestTime: string,
+  now: Date
+): Promise<boolean> {
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  try {
+    const supabase: any = await createClient();
+    const today = now.toISOString().split('T')[0];
+
+    // Get the last meal time today
+    const { data: lastRecord } = await supabase
+      .from('food_records')
+      .select('created_at')
+      .eq('user_id', userId)
+      .gte('created_at', `${today}T00:00:00`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lastRecord) {
+      const lastMealTime = new Date(lastRecord.created_at);
+      const hoursSinceLastMeal = (now.getTime() - lastMealTime.getTime()) / (1000 * 60 * 60);
+
+      // Send if 2-3 hours after last meal (check within 30-min window)
+      if (hoursSinceLastMeal >= 2 && hoursSinceLastMeal < 2.5) {
+        return true;
+      }
+
+      // Don't send yet if last meal was recent
+      if (hoursSinceLastMeal < 2) {
+        return false;
+      }
+    }
+  } catch {
+    // Fall through to default timing
+  }
+
+  // Fallback: use digest_time from profile (default 21:00)
+  const dt = digestTime || '21:00:00';
+  const [h, m] = dt.split(':').map(Number);
+  const digestMinutes = h * 60 + (m || 0);
+
+  // Allow 30-min window around digest time
+  return currentMinutes >= digestMinutes && currentMinutes < digestMinutes + 30;
 }
 
 /**

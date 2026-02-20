@@ -1073,21 +1073,26 @@ For now, I automatically detect your language from your messages.`,
       return;
     }
 
+    // Check if user is describing food they ate — text-based food logging
+    const foodLogResult = await this.tryTextFoodLog(text, message, context);
+    if (foodLogResult) return;
+
+    // Check if user is asking for meal suggestions
+    const mealAdviceResult = await this.tryMealAdvice(text, message, context);
+    if (mealAdviceResult) return;
+
     // Use AI to respond to general questions
     try {
       // Use intelligent conversation handler with full context
       const { intelligentConversation } = await import('@/lib/ai/intelligent-conversation');
       const aiResponse = await intelligentConversation.generateResponse(text, message.from, context);
       await whatsappClient.sendTextMessage(message.from, aiResponse);
-      
-      // Note: Preference extraction is already handled by PreferenceService's NLP extraction
-      // which is called from the Phase 3 integration in image-handler
     } catch (error) {
       logger.error({
         type: 'ai_response_error',
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      
+
       // Fallback to default response if AI fails
       const messages = {
         'en': `I'm not sure what you mean 🤔
@@ -1095,21 +1100,21 @@ For now, I automatically detect your language from your messages.`,
 Try these:
 • Send 3 numbers for quick setup: \`25 170 65\`
 • Send a food photo for analysis 📸
-• Click a button below for help`,
-        
+• Or tell me what you ate: "I had chicken rice"`,
+
         'zh-CN': `我不太明白您的意思 🤔
 
 试试这些：
 • 发送 3 个数字快速设置：\`25 170 65\`
 • 发送食物照片进行分析 📸
-• 点击下方按钮获取帮助`,
-        
+• 或者告诉我你吃了什么："午饭吃了鸡饭"`,
+
         'zh-TW': `我不太明白您的意思 🤔
 
 試試這些：
 • 發送 3 個數字快速設置：\`25 170 65\`
 • 發送食物照片進行分析 📸
-• 點擊下方按鈕獲取幫助`,
+• 或者告訴我你吃了什麼："午餐吃了雞飯"`,
       };
 
       await whatsappClient.sendButtonMessage(
@@ -1439,6 +1444,295 @@ Remember: Your core feature is analyzing food photos, so guide users to use this
       userId,
       userUuid: user.id,
     });
+  }
+
+  /**
+   * Try to detect meal advice questions and give recommendations
+   * e.g. "午饭吃什么好" / "what should I eat for lunch"
+   */
+  private async tryMealAdvice(
+    text: string,
+    message: Message,
+    context: MessageContext
+  ): Promise<boolean> {
+    const adviceKeywords = [
+      // English
+      'what should i eat', 'what to eat', 'suggest', 'recommend',
+      'what can i eat', 'any ideas for',
+      // Chinese
+      '吃什么', '吃啥', '推荐', '建议吃', '有什么好吃',
+      '吃什麼', '推薦', '建議吃',
+    ];
+
+    const lower = text.toLowerCase();
+    const isAdviceQuestion = adviceKeywords.some(kw => lower.includes(kw));
+    if (!isAdviceQuestion) return false;
+
+    try {
+      logger.info({
+        type: 'meal_advice_detected',
+        userId: context.userId,
+        text: text.substring(0, 50),
+      });
+
+      // Get today's consumed nutrition from food_records
+      const { createClient } = await import('@/lib/supabase/server');
+      const supabase = await createClient();
+
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone_number', message.from)
+        .maybeSingle();
+
+      let todaySummary = 'No meals logged today yet.';
+      if (user) {
+        const today = new Date().toISOString().split('T')[0];
+        const { data: records } = await supabase
+          .from('food_records')
+          .select('recognition_result')
+          .eq('user_id', user.id)
+          .gte('created_at', `${today}T00:00:00`)
+          .lte('created_at', `${today}T23:59:59`);
+
+        if (records && records.length > 0) {
+          let totalCal = 0, totalProtein = 0, totalCarbs = 0, totalFat = 0;
+          const foodNames: string[] = [];
+          for (const r of records) {
+            const result = r.recognition_result as any;
+            if (result?.totalNutrition) {
+              totalCal += Math.round((result.totalNutrition.calories.min + result.totalNutrition.calories.max) / 2);
+              totalProtein += Math.round((result.totalNutrition.protein.min + result.totalNutrition.protein.max) / 2);
+              totalCarbs += Math.round((result.totalNutrition.carbs.min + result.totalNutrition.carbs.max) / 2);
+              totalFat += Math.round((result.totalNutrition.fat.min + result.totalNutrition.fat.max) / 2);
+            }
+            if (result?.foods?.[0]) {
+              foodNames.push(result.foods[0].nameLocal || result.foods[0].name);
+            }
+          }
+          todaySummary = `Already eaten today: ${foodNames.join(', ')}. Total so far: ${totalCal} kcal, ${totalProtein}g protein, ${totalCarbs}g carbs, ${totalFat}g fat.`;
+        }
+      }
+
+      // Get user profile for calorie target
+      const { profileManager } = await import('@/lib/profile');
+      const profile = await profileManager.getProfile(message.from);
+      const goal = profile?.goal || 'maintain';
+      const targetCal = profile ? this.estimateDailyCalories(profile) : 2000;
+
+      // Ask AI for recommendation
+      const { openai } = await import('@/lib/openai/client');
+      const resp = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a Singapore nutrition assistant. The user is asking what to eat next. Give 2-3 specific Singapore hawker food suggestions based on their nutrition gap. Keep it short (under 100 words). Use the user's language. Goal: ${goal}. Daily calorie target: ${targetCal} kcal.`,
+          },
+          {
+            role: 'user',
+            content: `${todaySummary}\n\nUser asks: "${text}"`,
+          },
+        ],
+        max_tokens: 200,
+        temperature: 0.7,
+      });
+
+      const advice = resp.choices[0]?.message?.content || '';
+      await whatsappClient.sendTextMessage(message.from, `🍴 ${advice}`);
+      return true;
+    } catch (error) {
+      logger.error({
+        type: 'meal_advice_error',
+        userId: context.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Estimate daily calorie target from profile
+   */
+  private estimateDailyCalories(profile: any): number {
+    const { height, weight, age, gender, activity_level, goal } = profile;
+    if (!height || !weight || !age) return 2000;
+
+    // Mifflin-St Jeor
+    let bmr = 10 * weight + 6.25 * height - 5 * age;
+    bmr += gender === 'male' ? 5 : -161;
+
+    const multipliers: Record<string, number> = {
+      sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725,
+    };
+    let tdee = bmr * (multipliers[activity_level] || 1.375);
+
+    if (goal === 'lose-weight') tdee -= 300;
+    if (goal === 'gain-muscle') tdee += 200;
+
+    return Math.round(tdee);
+  }
+
+  /**
+   * Try to detect and log food from text description
+   * Returns true if the message was handled as a food log
+   */
+  private async tryTextFoodLog(
+    text: string,
+    message: Message,
+    context: MessageContext
+  ): Promise<boolean> {
+    // Quick keyword check before calling AI — avoid unnecessary API calls
+    const foodKeywords = [
+      // English
+      'ate', 'eat', 'had', 'having', 'lunch', 'dinner', 'breakfast', 'snack',
+      'drank', 'drink', 'coffee', 'tea', 'rice', 'noodle', 'chicken', 'fish',
+      'prata', 'laksa', 'mee', 'nasi', 'satay', 'kaya', 'toast',
+      // Chinese
+      '吃了', '喝了', '早餐', '午餐', '晚餐', '午饭', '晚饭', '早饭',
+      '鸡饭', '面', '粥', '饭', '汤', '咖啡', '奶茶', '吃的',
+      '雞飯', '麵', '粥', '飯', '湯', '喝的',
+    ];
+
+    const lower = text.toLowerCase();
+    const hasFoodKeyword = foodKeywords.some(kw => lower.includes(kw));
+    if (!hasFoodKeyword) return false;
+
+    try {
+      // Use AI to confirm this is a food log (not a question about food)
+      const { openai } = await import('@/lib/openai/client');
+      const check = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You determine if a message is describing food the user ate/is eating. Reply ONLY "yes" or "no". Examples: "I had chicken rice" → yes. "What is chicken rice?" → no. "午饭吃了鸡饭" → yes. "鸡饭健康吗" → no.',
+          },
+          { role: 'user', content: text },
+        ],
+        max_tokens: 3,
+        temperature: 0,
+      });
+
+      const answer = check.choices[0]?.message?.content?.trim().toLowerCase();
+      if (answer !== 'yes') return false;
+
+      logger.info({
+        type: 'text_food_log_detected',
+        userId: context.userId,
+        text: text.substring(0, 50),
+      });
+
+      // Send acknowledgment
+      const ackMsg = context.language === 'en'
+        ? '📝 Got it! Logging your meal...'
+        : '📝 收到！正在记录...';
+      await whatsappClient.sendTextMessage(message.from, ackMsg);
+
+      // Recognize food from text
+      const { foodRecognizer } = await import('@/lib/food-recognition/recognizer');
+      const recognition = await foodRecognizer.recognizeFoodFromText(text, {
+        userId: context.userId,
+        language: context.language,
+        mealTime: new Date(),
+      });
+
+      if (!recognition.success || !recognition.result) {
+        const errMsg = context.language === 'en'
+          ? "Couldn't identify the food. Try being more specific, e.g. \"I had 1 plate of chicken rice\""
+          : '无法识别食物，试试更具体的描述，例如："吃了一盘鸡饭"';
+        await whatsappClient.sendTextMessage(message.from, errMsg);
+        return true;
+      }
+
+      // Get health rating
+      const { ratingEngine } = await import('@/lib/rating/rating-engine');
+      const { profileManager } = await import('@/lib/profile');
+      const profile = await profileManager.getProfile(context.userId);
+
+      const ratingProfile = profile ? {
+        userId: profile.user_id,
+        height: profile.height,
+        weight: profile.weight,
+        age: profile.age ?? undefined,
+        gender: profile.gender ?? undefined,
+        goal: profile.goal,
+        activityLevel: profile.activity_level,
+        digestTime: profile.digest_time,
+        quickMode: profile.quick_mode,
+        createdAt: new Date(profile.created_at),
+        updatedAt: new Date(profile.updated_at),
+      } : {
+        userId: context.userId,
+        height: 170, weight: 65, age: 30,
+        gender: 'male' as const, goal: 'maintain' as const,
+        activityLevel: 'light' as const, digestTime: '21:00:00',
+        quickMode: false, createdAt: new Date(), updatedAt: new Date(),
+      };
+
+      const healthRating = await ratingEngine.evaluate(recognition.result, ratingProfile);
+
+      // Save to database (no image)
+      const { createClient } = await import('@/lib/supabase/server');
+      const supabase = await createClient();
+
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone_number', message.from)
+        .maybeSingle();
+
+      if (!user) {
+        logger.error({ type: 'text_food_log_user_not_found', userId: message.from });
+        return true;
+      }
+
+      const { data: record } = await supabase
+        .from('food_records')
+        .insert({
+          user_id: user.id,
+          image_url: null,
+          image_hash: null,
+          recognition_result: recognition.result as any,
+          health_rating: healthRating as any,
+          meal_context: recognition.result.mealContext,
+        })
+        .select('id')
+        .single();
+
+      // Send concise response
+      const { responseFormatterSG } = await import('./response-formatter-sg');
+      const responseMsg = responseFormatterSG.formatResponse(recognition.result, healthRating);
+      await whatsappClient.sendTextMessage(message.from, responseMsg);
+
+      // Send detail/modify/ignore buttons
+      if (record) {
+        const buttonTexts = {
+          'en': { detail: '📊 Details', modify: '✏️ Modify', ignore: '❌ Ignore' },
+          'zh-CN': { detail: '📊 详情', modify: '✏️ 修改', ignore: '❌ 忽略' },
+          'zh-TW': { detail: '📊 詳情', modify: '✏️ 修改', ignore: '❌ 忽略' },
+        };
+        const btns = buttonTexts[context.language];
+        await whatsappClient.sendInteractiveButtons(
+          message.from,
+          context.language === 'en' ? 'Tap for more info' : '点击查看更多',
+          [
+            { id: `detail_${record.id}`, title: btns.detail },
+            { id: `modify_${record.id}`, title: btns.modify },
+            { id: `ignore_${record.id}`, title: btns.ignore },
+          ]
+        );
+      }
+
+      return true;
+    } catch (error) {
+      logger.error({
+        type: 'text_food_log_error',
+        userId: context.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return false; // Fall through to normal conversation
+    }
   }
 
   /**

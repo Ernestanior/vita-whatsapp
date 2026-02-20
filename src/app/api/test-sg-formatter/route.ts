@@ -82,84 +82,61 @@ export async function GET() {
       sodiumTotal: 2300,
     };
 
-    // Test 1: Uncle personality
+    // Test 1: Concise response with budget
     results.push({
-      test: 'Uncle Personality',
+      test: 'Concise with Budget',
       status: 'testing',
     });
 
-    const uncleResponse = responseFormatterSG.formatResponse(
+    const conciseResponse = responseFormatterSG.formatResponse(
       mockResult,
       mockRating,
-      'uncle',
-      mockBudget
+      { budget: mockBudget }
     );
 
     results.push({
-      test: 'Uncle Personality',
+      test: 'Concise with Budget',
       status: 'success',
-      response: uncleResponse,
+      response: conciseResponse,
     });
 
-    // Test 2: Hardcore personality
+    // Test 2: Detail response
     results.push({
-      test: 'Hardcore Personality',
+      test: 'Detail Response',
       status: 'testing',
     });
 
-    const hardcoreResponse = responseFormatterSG.formatResponse(
+    const detailResponse = responseFormatterSG.formatDetailResponse(
       mockResult,
-      mockRating,
-      'hardcore',
-      mockBudget
+      mockRating
     );
 
     results.push({
-      test: 'Hardcore Personality',
+      test: 'Detail Response',
       status: 'success',
-      response: hardcoreResponse,
+      response: detailResponse,
     });
 
-    // Test 3: Gentle personality
+    // Test 3: Without budget
     results.push({
-      test: 'Gentle Personality',
-      status: 'testing',
-    });
-
-    const gentleResponse = responseFormatterSG.formatResponse(
-      mockResult,
-      mockRating,
-      'gentle',
-      mockBudget
-    );
-
-    results.push({
-      test: 'Gentle Personality',
-      status: 'success',
-      response: gentleResponse,
-    });
-
-    // Test 4: Without budget
-    results.push({
-      test: 'Uncle Without Budget',
+      test: 'Concise Without Budget',
       status: 'testing',
     });
 
     const noBudgetResponse = responseFormatterSG.formatResponse(
       mockResult,
-      mockRating,
-      'uncle'
+      mockRating
     );
 
     results.push({
-      test: 'Uncle Without Budget',
+      test: 'Concise Without Budget',
       status: 'success',
       response: noBudgetResponse,
     });
 
     // Summary
     const summary = {
-      totalTests: 4,
+      totalTests: 3,
       passed: results.filter(r => r.status === 'success').length,
       failed: results.filter(r => r.status === 'failed').length,
     };

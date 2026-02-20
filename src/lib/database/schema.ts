@@ -34,8 +34,8 @@ export interface HealthProfile {
 export interface FoodRecord {
   id: string;
   user_id: string;
-  image_url: string;
-  image_hash: string; // SHA256 hash
+  image_url: string | null;
+  image_hash: string | null;
   recognition_result: RecognitionResult;
   health_rating: HealthRating;
   meal_context: 'breakfast' | 'lunch' | 'dinner' | 'snack' | null;

@@ -11,6 +11,7 @@
 
 import { logger } from '@/utils/logger';
 import { whatsappClient } from './client';
+import { responseFormatterSG } from './response-formatter-sg';
 import { createClient } from '@/lib/supabase/server';
 import { TextHandler } from './text-handler';
 import type { Message, MessageContext } from '@/types/whatsapp';
@@ -80,7 +81,12 @@ export class InteractiveHandler {
 
       // Handle food record actions
       switch (action) {
+        case 'detail':
+          await this.handleDetail(context, recordId);
+          break;
+
         case 'record':
+          // Legacy: auto-recorded now, just confirm
           await this.handleRecord(context, recordId);
           break;
 
@@ -206,6 +212,58 @@ Keep sending food photos and I'll guide you. 💪`,
       logger.error({
         type: 'goal_selection_error',
         userId: context.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      await this.sendError(context);
+    }
+  }
+
+  /**
+   * Handle detail button - show full nutrition breakdown
+   */
+  private async handleDetail(
+    context: MessageContext,
+    recordId: string
+  ): Promise<void> {
+    try {
+      const supabase = await createClient();
+
+      const { data: record, error } = await supabase
+        .from('food_records')
+        .select('recognition_result, health_rating')
+        .eq('id', recordId)
+        .single();
+
+      if (error || !record) {
+        logger.warn({
+          type: 'detail_record_not_found',
+          recordId,
+          userId: context.userId,
+        });
+        const msg = context.language === 'en'
+          ? '❌ Record not found.'
+          : '❌ 记录未找到。';
+        await whatsappClient.sendTextMessage(context.userId, msg);
+        return;
+      }
+
+      const detailMessage = responseFormatterSG.formatDetailResponse(
+        record.recognition_result,
+        record.health_rating
+      );
+
+      await whatsappClient.sendTextMessage(context.userId, detailMessage);
+
+      logger.info({
+        type: 'detail_sent',
+        userId: context.userId,
+        recordId,
+      });
+    } catch (error) {
+      logger.error({
+        type: 'detail_error',
+        userId: context.userId,
+        recordId,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       await this.sendError(context);

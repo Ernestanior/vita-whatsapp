@@ -598,13 +598,13 @@ export class ImageHandler {
     rating: HealthRating,
     recordId: string
   ): Promise<void> {
-    // Use new Singapore-style formatter with Uncle personality by default
-    const message = responseFormatterSG.formatResponse(result, rating, 'uncle');
+    // Concise response: food + calories + score + one tip
+    const message = responseFormatterSG.formatResponse(result, rating);
 
     // Send the main message
     await whatsappClient.sendTextMessage(context.userId, message);
 
-    // Send quick reply buttons
+    // Send action buttons (auto-recorded, user can view details or modify)
     await this.sendQuickReplyButtons(context, recordId);
   }
 
@@ -720,17 +720,17 @@ export class ImageHandler {
   ): Promise<void> {
     const buttonTexts = {
       'en': {
-        record: '✅ Record',
+        detail: '📊 Details',
         modify: '✏️ Modify',
         ignore: '❌ Ignore',
       },
       'zh-CN': {
-        record: '✅ 记录',
+        detail: '📊 详情',
         modify: '✏️ 修改',
         ignore: '❌ 忽略',
       },
       'zh-TW': {
-        record: '✅ 記錄',
+        detail: '📊 詳情',
         modify: '✏️ 修改',
         ignore: '❌ 忽略',
       },
@@ -738,14 +738,13 @@ export class ImageHandler {
 
     const buttons = buttonTexts[context.language];
 
-    // Send interactive button message
     await whatsappClient.sendInteractiveButtons(
       context.userId,
-      context.language === 'en' 
-        ? 'What would you like to do?'
-        : '您想做什么？',
+      context.language === 'en'
+        ? 'Tap for more info'
+        : '点击查看更多',
       [
-        { id: `record_${recordId}`, title: buttons.record },
+        { id: `detail_${recordId}`, title: buttons.detail },
         { id: `modify_${recordId}`, title: buttons.modify },
         { id: `ignore_${recordId}`, title: buttons.ignore },
       ]

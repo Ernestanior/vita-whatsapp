@@ -614,46 +614,54 @@ export class ContextManager {
           .eq('user_id', userId)
           .gte('created_at', `${today}T00:00:00`)
           .lt('created_at', `${today}T23:59:59`);
-        
+
         scenes = new Set(records?.map((r: any) => r.meal_scene) || []);
       } else {
         scenes = recordedScenes;
       }
 
-      // 检查当前时间
       const now = new Date();
-      const currentHour = now.getHours();
-      const currentMinute = now.getMinutes();
-      const currentTimeInMinutes = currentHour * 60 + currentMinute;
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-      // 检查午餐提醒
-      if (
-        pattern.typical_lunch_time &&
-        !scenes.has('lunch') &&
-        currentTimeInMinutes >= 705 && // 11:45
-        currentTimeInMinutes < 780
-      ) {
-        const foodPref = await this.generateRecommendations(userId, 'lunch', 1);
-        const prefText = foodPref.length > 0 ? ` Planning to have your favorite ${foodPref[0].foodName} today?` : "";
-        return {
-          shouldRemind: true,
-          message: `It's almost lunchtime!${prefText} Don't forget to track your meal!`,
-          mealType: 'lunch',
-        };
-      }
+      // Helper: parse "HH:MM" to minutes
+      const parseTime = (t: string | null): number | null => {
+        if (!t) return null;
+        const [h, m] = t.split(':').map(Number);
+        return h * 60 + (m || 0);
+      };
 
-      // 检查晚餐提醒
-      if (
-        pattern.typical_dinner_time &&
-        !scenes.has('dinner') &&
-        currentTimeInMinutes >= 1140 && // 19:00
-        currentTimeInMinutes < 1200 // 20:00
-      ) {
-        return {
-          shouldRemind: true,
-          message: "Haven't logged your dinner yet. Remember to track your meal!",
-          mealType: 'dinner',
-        };
+      // Check each meal: remind 15 min before typical time, within a 30-min window
+      const meals: { type: MealScene; time: string | null }[] = [
+        { type: 'breakfast', time: pattern.typical_breakfast_time },
+        { type: 'lunch', time: pattern.typical_lunch_time },
+        { type: 'dinner', time: pattern.typical_dinner_time },
+      ];
+
+      for (const meal of meals) {
+        const typicalMinutes = parseTime(meal.time);
+        if (!typicalMinutes) continue;
+        if (scenes.has(meal.type)) continue;
+
+        // Remind window: 15 min before to 15 min after typical time
+        const windowStart = typicalMinutes - 15;
+        const windowEnd = typicalMinutes + 15;
+
+        if (currentMinutes >= windowStart && currentMinutes < windowEnd) {
+          const foodPref = await this.generateRecommendations(userId, meal.type, 1);
+          const prefText = foodPref.length > 0
+            ? ` Having ${foodPref[0].foodName} today?`
+            : '';
+
+          const mealNames: Record<string, string> = {
+            breakfast: 'breakfast', lunch: 'lunch', dinner: 'dinner',
+          };
+
+          return {
+            shouldRemind: true,
+            message: `It's almost ${mealNames[meal.type]} time!${prefText} 📸`,
+            mealType: meal.type,
+          };
+        }
       }
 
       return { shouldRemind: false };

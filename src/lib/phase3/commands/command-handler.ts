@@ -51,29 +51,27 @@ export class Phase3CommandHandler {
         case 'stats':
           await this.handleStreakCommand(userId, language);
           break;
-        
+
         case 'budget':
           await this.handleBudgetCommand(userId, language, args);
           break;
-        
-        case 'card':
-          await this.handleCardCommand(userId, language, args);
-          break;
-        
+
         case 'reminders':
           await this.handleRemindersCommand(userId, language, args);
           break;
-        
-        case 'compare':
-        case 'progress':
-          await this.handleCompareCommand(userId, language);
-          break;
-        
+
         case 'preferences':
         case 'settings':
           await this.handlePreferencesCommand(userId, language);
           break;
-        
+
+        case 'card':
+        case 'compare':
+        case 'progress':
+          // Simplified: redirect to weekly report info
+          await this.sendDeprecatedMessage(userId, language);
+          break;
+
         default:
           logger.warn({
             type: 'unknown_phase3_command',
@@ -475,6 +473,22 @@ ${prefs.dietaryType.length === 0 && prefs.allergies.length === 0 ? '還沒有設
       'en': '❌ User not found. Please send a food photo first to get started!',
       'zh-CN': '❌ 未找到用户。请先发送食物照片开始使用！',
       'zh-TW': '❌ 未找到用戶。請先發送食物照片開始使用！',
+    };
+
+    await whatsappClient.sendTextMessage(userId, messages[language]);
+  }
+
+  /**
+   * Send message for deprecated commands (card, compare, progress)
+   */
+  private async sendDeprecatedMessage(
+    userId: string,
+    language: 'en' | 'zh-CN' | 'zh-TW'
+  ): Promise<void> {
+    const messages = {
+      'en': '📊 Your weekly report is sent every Sunday automatically! Use "streak" to check your progress.',
+      'zh-CN': '📊 每周报告会在每周日自动发送！输入"连续"查看你的进度。',
+      'zh-TW': '📊 每週報告會在每週日自動發送！輸入"連續"查看你的進度。',
     };
 
     await whatsappClient.sendTextMessage(userId, messages[language]);
