@@ -4,11 +4,16 @@ import { getContextManager } from '@/lib/context/context-manager';
 import { WhatsAppClient } from '@/lib/whatsapp/client';
 import { logger } from '@/utils/logger';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
-
 export async function GET(req: NextRequest) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    logger.error('Missing Supabase environment variables');
+    return new NextResponse('Configuration Error', { status: 500 });
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
   const authHeader = req.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 });
