@@ -58,6 +58,8 @@ export class RatingEngine {
       this.evaluateSodium(food),
       this.evaluateFat(food),
       this.evaluateBalance(food),
+      this.evaluateNutriGrade(food),
+      this.evaluateGI(food),
     ];
 
     // 3. Calculate overall score
@@ -334,15 +336,70 @@ export class RatingEngine {
   }
 
   /**
+   * Evaluate Nutri-Grade
+   */
+  private evaluateNutriGrade(food: FoodRecognitionResult): FactorEvaluation {
+    const grades = food.foods.map(f => f.nutriGrade).filter(Boolean);
+    if (grades.length === 0) {
+      return { name: 'Nutri-Grade', status: 'good', message: 'N/A', score: 100 };
+    }
+
+    // Use the worst grade as the overall grade
+    const worstGrade = grades.sort().reverse()[0];
+    
+    let score = 100;
+    let status: FactorStatus = 'good';
+    let message = `Nutri-Grade: ${worstGrade}`;
+
+    if (worstGrade === 'C') {
+      score = 60;
+      status = 'moderate';
+      message += ' - High in sugar/saturated fat';
+    } else if (worstGrade === 'D') {
+      score = 30;
+      status = 'poor';
+      message += ' - Very high in sugar/saturated fat';
+    }
+
+    return { name: 'Nutri-Grade', status, message, score };
+  }
+
+  /**
+   * Evaluate GI Level
+   */
+  private evaluateGI(food: FoodRecognitionResult): FactorEvaluation {
+    const levels = food.foods.map(f => f.giLevel).filter(Boolean);
+    if (levels.length === 0) {
+      return { name: 'GI Level', status: 'good', message: 'N/A', score: 100 };
+    }
+
+    const hasHighGI = levels.includes('High');
+    
+    let score = 100;
+    let status: FactorStatus = 'good';
+    let message = 'Healthy GI level';
+
+    if (hasHighGI) {
+      score = 40;
+      status = 'poor';
+      message = 'High Glycemic Index - may cause blood sugar spikes';
+    }
+
+    return { name: 'GI Level', status, message, score };
+  }
+
+  /**
    * Calculate overall score from factor evaluations
    */
   private calculateScore(factors: FactorEvaluation[]): number {
     // Weighted average
-    const weights = {
-      Calories: 0.35, // 35%
-      Sodium: 0.25, // 25%
-      Fat: 0.20, // 20%
-      Balance: 0.20, // 20%
+    const weights: Record<string, number> = {
+      Calories: 0.25,
+      Sodium: 0.20,
+      Fat: 0.15,
+      Balance: 0.15,
+      'Nutri-Grade': 0.15,
+      'GI Level': 0.10,
     };
 
     let totalScore = 0;
@@ -375,6 +432,15 @@ export class RatingEngine {
     food: FoodRecognitionResult
   ): string[] {
     const suggestions: string[] = [];
+    const addedSuggestions = new Set<string>();
+
+    const addUniqueSuggestion = (text: string) => {
+      if (!addedSuggestions.has(text)) {
+        suggestions.push(text);
+        addedSuggestions.has(text);
+        addedSuggestions.add(text);
+      }
+    };
 
     // Analyze each factor and provide specific suggestions
     for (const factor of factors) {
@@ -383,32 +449,32 @@ export class RatingEngine {
           case 'Calories':
             if (factor.message.includes('high')) {
               if (profile.goal === 'lose-weight') {
-                suggestions.push('Consider smaller portions to support your weight loss goal');
+                addUniqueSuggestion('Consider smaller portions to support your weight loss goal');
               } else {
-                suggestions.push('This meal is calorie-dense - balance with lighter meals today');
+                addUniqueSuggestion('This meal is calorie-dense - balance with lighter meals today');
               }
             } else if (factor.message.includes('low')) {
               if (profile.goal === 'gain-muscle') {
-                suggestions.push('Add protein-rich foods to support muscle growth');
+                addUniqueSuggestion('Add protein-rich foods to support muscle growth');
               }
             }
             break;
 
           case 'Sodium':
             if (factor.status === 'poor') {
-              suggestions.push('Reduce soy sauce, soup, and salty condiments');
-              suggestions.push('Drink plenty of water to help flush excess sodium');
+              addUniqueSuggestion('Reduce soy sauce, soup, and salty condiments');
+              addUniqueSuggestion('Drink plenty of water to help flush excess sodium');
             } else if (factor.status === 'moderate') {
-              suggestions.push('Watch sodium intake for the rest of the day');
+              addUniqueSuggestion('Watch sodium intake for the rest of the day');
             }
             break;
 
           case 'Fat':
             if (factor.status === 'poor') {
-              suggestions.push('Remove visible fat and chicken skin');
-              suggestions.push('Choose steamed or grilled options instead of fried');
+              addUniqueSuggestion('Remove visible fat and chicken skin');
+              addUniqueSuggestion('Choose steamed or grilled options instead of fried');
             } else if (factor.status === 'moderate') {
-              suggestions.push('Balance with lower-fat meals later today');
+              addUniqueSuggestion('Balance with lower-fat meals later today');
             }
             break;
 
@@ -423,33 +489,65 @@ export class RatingEngine {
                 (food.totalNutrition.carbs.min +
                   food.totalNutrition.carbs.max) /
                 2;
+              const avgFat = 
+                (food.totalNutrition.fat.min +
+                  food.totalNutrition.fat.max) /
+                2;
 
               const proteinCal = avgProtein * 4;
               const carbsCal = avgCarbs * 4;
-              const totalCal = proteinCal + carbsCal + (food.totalNutrition.fat.min + food.totalNutrition.fat.max) / 2 * 9;
+              const fatCal = avgFat * 9;
+              const totalCal = proteinCal + carbsCal + fatCal;
 
-              const proteinPercent = (proteinCal / totalCal) * 100;
-              const carbsPercent = (carbsCal / totalCal) * 100;
+              if (totalCal > 0) {
+                const proteinPercent = (proteinCal / totalCal) * 100;
+                const carbsPercent = (carbsCal / totalCal) * 100;
 
-              if (proteinPercent < 15) {
-                suggestions.push('Add more protein (lean meat, tofu, eggs) for better balance');
-              }
-              if (carbsPercent > 65) {
-                suggestions.push('Reduce rice/noodles and add more vegetables');
+                if (proteinPercent < 15) {
+                  addUniqueSuggestion('Add more protein (lean meat, tofu, eggs) for better balance');
+                }
+                if (carbsPercent > 65) {
+                  addUniqueSuggestion('Reduce rice/noodles and add more vegetables');
+                }
               }
             }
             break;
+          case 'GI Level':
+            if (factor.status === 'poor') {
+              addUniqueSuggestion('💡 Tip: Swap white rice/noodles for whole grains or add more vegetables to lower GI');
+            }
+            break;
+
+          case 'Nutri-Grade': {
+            const worstGrade = food.foods.map(f => f.nutriGrade).filter(Boolean).sort().reverse()[0];
+            if (worstGrade === 'C' || worstGrade === 'D') {
+              addUniqueSuggestion('💡 Tip: Choose "Siu Dai" (less sugar) or water to improve Nutri-Grade');
+            }
+            break;
+          }
         }
       }
     }
 
+    const hasHawkerFood = food.foods.some(f => f.isHawkerFood);
+    if (hasHawkerFood) {
+      addUniqueSuggestion('💡 Hawker Tip: Ask for less gravy and more bean sprouts');
+      
+      // Add specific improvement tips from AI recognition
+      food.foods.forEach(f => {
+        if (f.improvementTip) {
+          addUniqueSuggestion(`💡 Tip for ${f.nameLocal || f.name}: ${f.improvementTip}`);
+        }
+      });
+    }
+
     // Goal-specific suggestions
     if (profile.goal === 'lose-weight') {
-      suggestions.push('💡 Tip: Eat slowly and stop when 80% full');
+      addUniqueSuggestion('💡 Tip: Eat slowly and stop when 80% full');
     } else if (profile.goal === 'gain-muscle') {
-      suggestions.push('💡 Tip: Ensure adequate protein intake throughout the day');
+      addUniqueSuggestion('💡 Tip: Ensure adequate protein intake throughout the day');
     } else if (profile.goal === 'control-sugar') {
-      suggestions.push('💡 Tip: Choose whole grains and avoid sugary drinks');
+      addUniqueSuggestion('💡 Tip: Choose whole grains and avoid sugary drinks');
     }
 
     // Limit to top 3-4 most relevant suggestions

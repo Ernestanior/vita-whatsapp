@@ -23,6 +23,10 @@ IMPORTANT CONTEXT:
 - Consider typical Singapore portion sizes
 - Account for local cooking methods (often high oil, high sodium)
 - Be aware of hidden calories from sauces, oil, and cooking methods
+- Check for visual reference objects like hands/palms/standard objects (e.g., credit cards) to improve portion estimation. If a hand/palm is visible, use it as a 3D reference for volume.
+- If no reference is present, use standard Singapore hawker portions as the base and mention this in the "portion" field.
+- Assign a Nutri-Grade (A, B, C, or D) to drinks or desserts based on Singapore's HPB standards.
+- Provide specific "Local Improvement Tips" for Singapore hawker food (e.g., if Laksa is detected, suggest "Choose bee hoon instead of thick bee hoon" or "Ask for less gravy").
 
 SINGAPORE FOOD DATABASE (Common Examples):
 1. Chicken Rice (海南鸡饭): 500-600 cal, high sodium from soy sauce
@@ -44,6 +48,10 @@ RESPONSE FORMAT (JSON):
       "nameLocal": "本地名称 (Chinese/Malay name)",
       "confidence": 85,
       "portion": "1 plate / 1 bowl / 2 pieces / etc.",
+      "nutriGrade": "B", 
+      "giLevel": "Medium",
+      "isHawkerFood": true,
+      "improvementTip": "Ask for less gravy next time",
       "nutrition": {
         "calories": { "min": 450, "max": 550 },
         "protein": { "min": 20, "max": 25 },

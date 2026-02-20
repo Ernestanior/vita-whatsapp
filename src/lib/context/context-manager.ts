@@ -474,7 +474,7 @@ export class ContextManager {
       // 这是一个简化的实现
       // 实际应用中需要集成 Google Places API 或其他地图服务
       
-      // 新加坡健康餐厅数据库（示例）
+      // 新加坡健康餐厅数据库（示例 - 扩展版）
       const healthyRestaurants = [
         {
           name: 'SaladStop!',
@@ -483,6 +483,7 @@ export class ContextManager {
           address: 'Multiple locations',
           healthScore: 9,
           cuisine: 'Salads & Healthy Bowls',
+          recommendation: 'Signature Salads',
         },
         {
           name: 'Grain Traders',
@@ -491,6 +492,7 @@ export class ContextManager {
           address: 'Raffles Place',
           healthScore: 8,
           cuisine: 'Grain Bowls',
+          recommendation: 'Custom Bowls',
         },
         {
           name: 'The Soup Spoon',
@@ -499,6 +501,25 @@ export class ContextManager {
           address: 'Marina Bay',
           healthScore: 7,
           cuisine: 'Soups & Salads',
+          recommendation: 'Low-calorie Soups',
+        },
+        {
+          name: 'Stuff\'d',
+          lat: 1.3000,
+          lng: 103.8390,
+          address: 'Orchard Road',
+          healthScore: 7,
+          cuisine: 'Mexican/Turkish',
+          recommendation: 'Daily Bowl with Chicken',
+        },
+        {
+          name: 'Healthier Hawker Stall (Example)',
+          lat: 1.2810,
+          lng: 103.8440,
+          address: 'Maxwell Food Centre',
+          healthScore: 8,
+          cuisine: 'Local Food',
+          recommendation: 'Sliced Fish Soup (No Milk)',
         },
       ];
 
@@ -517,6 +538,7 @@ export class ContextManager {
             distance: Math.round(distance),
             healthScore: restaurant.healthScore,
             cuisine: restaurant.cuisine,
+            recommendation: (restaurant as any).recommendation,
           };
         })
         .filter((r) => r.distance <= radius)
@@ -555,7 +577,6 @@ export class ContextManager {
       Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
       Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
     return R * c;
   }
 
@@ -563,7 +584,10 @@ export class ContextManager {
    * 检查是否需要提醒用户
    * 需求 16.6: 在异常时提醒用户
    */
-  async checkMealReminder(userId: string): Promise<{
+  async checkMealReminder(
+    userId: string,
+    recordedScenes?: Set<string>
+  ): Promise<{
     shouldRemind: boolean;
     message?: string;
     mealType?: MealScene;
@@ -581,17 +605,20 @@ export class ContextManager {
       }
 
       // 获取今天的记录
-      const today = new Date().toISOString().split('T')[0];
-      const { data: todayRecords } = await this.supabase
-        .from('food_records')
-        .select('meal_scene')
-        .eq('user_id', userId)
-        .gte('created_at', `${today}T00:00:00`)
-        .lt('created_at', `${today}T23:59:59`);
-
-      const recordedScenes = new Set(
-        (todayRecords || []).map((r: any) => r.meal_scene)
-      );
+      let scenes: Set<string>;
+      if (!recordedScenes) {
+        const today = new Date().toISOString().split('T')[0];
+        const { data: records } = await this.supabase
+          .from('food_records')
+          .select('meal_scene')
+          .eq('user_id', userId)
+          .gte('created_at', `${today}T00:00:00`)
+          .lt('created_at', `${today}T23:59:59`);
+        
+        scenes = new Set(records?.map((r: any) => r.meal_scene) || []);
+      } else {
+        scenes = recordedScenes;
+      }
 
       // 检查当前时间
       const now = new Date();
@@ -602,13 +629,15 @@ export class ContextManager {
       // 检查午餐提醒
       if (
         pattern.typical_lunch_time &&
-        !recordedScenes.has('lunch') &&
-        currentTimeInMinutes >= 780 && // 13:00
-        currentTimeInMinutes < 840 // 14:00
+        !scenes.has('lunch') &&
+        currentTimeInMinutes >= 705 && // 11:45
+        currentTimeInMinutes < 780
       ) {
+        const foodPref = await this.generateRecommendations(userId, 'lunch', 1);
+        const prefText = foodPref.length > 0 ? ` Planning to have your favorite ${foodPref[0].foodName} today?` : "";
         return {
           shouldRemind: true,
-          message: "Haven't logged your lunch yet. Don't forget to track your meal!",
+          message: `It's almost lunchtime!${prefText} Don't forget to track your meal!`,
           mealType: 'lunch',
         };
       }
@@ -616,7 +645,7 @@ export class ContextManager {
       // 检查晚餐提醒
       if (
         pattern.typical_dinner_time &&
-        !recordedScenes.has('dinner') &&
+        !scenes.has('dinner') &&
         currentTimeInMinutes >= 1140 && // 19:00
         currentTimeInMinutes < 1200 // 20:00
       ) {

@@ -36,6 +36,10 @@ export interface FoodItem {
   nameLocal: string;
   confidence: number; // 0-100
   portion: string;
+  nutriGrade?: 'A' | 'B' | 'C' | 'D';
+  giLevel?: 'Low' | 'Medium' | 'High';
+  isHawkerFood?: boolean;
+  improvementTip?: string;
   nutrition: NutritionData;
 }
 
