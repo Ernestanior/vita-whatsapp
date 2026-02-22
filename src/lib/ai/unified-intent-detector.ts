@@ -61,10 +61,10 @@ Classify the user message into ONE intent and optionally extract structured data
 INTENTS:
 - FOOD_LOG: User DESCRIBES food they ate/are eating. "吃了鸡饭", "I had pasta", "午饭吃了皮蛋粥", "早餐喝了咖啡吃了面包"
 - MEAL_ADVICE: User ASKS what to eat / wants food suggestions. "午饭吃什么好", "what should I eat", "推荐午餐"
-- PROFILE_UPDATE: User PROVIDES personal info to update. "I'm 65kg now", "我身高170", "胖了两斤"
+- PROFILE_UPDATE: User PROVIDES or IMPLIES personal info changes. "I'm 65kg now", "我身高170", "胖了两斤", "我怀孕了"(implies female), "做了变性手术"(implies gender change), "我今年30了"(age=30)
 - QUICK_SETUP: Exactly 2-3 numbers = age height weight. "25 170 65"
 - STATS: User wants to VIEW statistics/analysis. "看数据", "show stats", "数据分析"
-- HISTORY: User wants to VIEW past meal records. "最近吃了什么", "show my meals", "查看历史"
+- HISTORY: User wants to VIEW past meal records. "最近吃了什么", "show my meals", "查看历史", "帮我看看最近吃的", "review my meals"
 - PROFILE: User wants to VIEW their profile info. "我的资料", "show profile"
 - HELP: User needs help/instructions. "怎么用", "help"
 - START: User wants to start/restart. "开始", "start"
@@ -82,11 +82,16 @@ INTENTS:
 CRITICAL RULES:
 1. "吃了X" / "I had X" / "ate X" = FOOD_LOG (logging food, NOT asking about it)
 2. "吃什么好" / "what should I eat" = MEAL_ADVICE (asking for suggestions)
-3. "看历史" / "show meals" = HISTORY (viewing records)
+3. "看历史" / "show meals" / "看看最近吃的" = HISTORY (viewing records)
 4. "X健康吗" / "is X healthy" = GENERAL (asking about food, NOT logging)
 5. Numbers with body context ("65kg", "170cm", "胖了") = PROFILE_UPDATE
 6. Exactly 2-3 bare numbers ("25 170 65") = QUICK_SETUP
 7. 1斤 = 0.5kg, 1 pound = 0.4536kg — always convert to kg in extractedData
+8. Life events implying profile changes = PROFILE_UPDATE. Examples:
+   - "我怀孕了" → gender: "female"
+   - "做了变性手术" / "I transitioned" → infer new gender from context
+   - "我今年30了" → age: 30
+9. If user mentions reviewing/evaluating their past eating habits → HISTORY (not GENERAL)
 
 Respond with JSON only, no explanation:
 {"intent":"INTENT_NAME","confidence":0.95,"extractedData":{}}
@@ -101,8 +106,10 @@ User: "25 170 65" → {"intent":"QUICK_SETUP","confidence":0.99,"extractedData":
 User: "鸡饭健康吗" → {"intent":"GENERAL","confidence":0.92,"extractedData":{}}
 User: "你好" → {"intent":"GREETING","confidence":0.99,"extractedData":{}}
 User: "查看历史记录" → {"intent":"HISTORY","confidence":0.98,"extractedData":{}}
-User: "我的连续打卡" → {"intent":"STREAK","confidence":0.95,"extractedData":{}}`;
-
+User: "我的连续打卡" → {"intent":"STREAK","confidence":0.95,"extractedData":{}}
+User: "我怀孕了" → {"intent":"PROFILE_UPDATE","confidence":0.88,"extractedData":{"gender":"female"}}
+User: "帮我看看我最近吃的健不健康" → {"intent":"HISTORY","confidence":0.90,"extractedData":{}}
+User: "我今年30了" → {"intent":"PROFILE_UPDATE","confidence":0.95,"extractedData":{"age":30}}`;
 // ─── Valid intents for parsing ─────────────────────────
 const VALID_INTENTS = new Set(Object.values(UserIntent));
 
