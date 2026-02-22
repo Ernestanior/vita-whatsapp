@@ -10,9 +10,6 @@ import { FeatureDiscoveryService } from './services/feature-discovery-engine';
 import { PreferenceService } from './services/preference-manager';
 import { BudgetService } from './services/budget-tracker';
 import { StreakService } from './services/streak-manager-fixed';
-import { CardService } from './services/card-generator';
-import { ReminderServiceImpl } from './services/reminder-service';
-import { ComparisonService } from './services/comparison-engine';
 
 /**
  * Service Container
@@ -25,9 +22,6 @@ export class ServiceContainer {
   private preferenceManager: PreferenceService | null = null;
   private budgetTracker: BudgetService | null = null;
   private streakManager: StreakService | null = null;
-  private cardGenerator: CardService | null = null;
-  private reminderService: ReminderServiceImpl | null = null;
-  private comparisonEngine: ComparisonService | null = null;
 
   private constructor(private supabase: SupabaseClient<Database>) {
     logger.info('ServiceContainer initialized');
@@ -88,35 +82,5 @@ export class ServiceContainer {
       this.streakManager = new StreakService(this.supabase);
     }
     return this.streakManager;
-  }
-
-  /**
-   * Get Card Generator
-   */
-  getCardGenerator(): CardService {
-    if (!this.cardGenerator) {
-      this.cardGenerator = new CardService(this.supabase);
-    }
-    return this.cardGenerator;
-  }
-
-  /**
-   * Get Reminder Service
-   */
-  getReminderService(): ReminderServiceImpl {
-    if (!this.reminderService) {
-      this.reminderService = new ReminderServiceImpl(this.supabase);
-    }
-    return this.reminderService;
-  }
-
-  /**
-   * Get Comparison Engine
-   */
-  getComparisonEngine(): ComparisonService {
-    if (!this.comparisonEngine) {
-      this.comparisonEngine = new ComparisonService(this.supabase);
-    }
-    return this.comparisonEngine;
   }
 }

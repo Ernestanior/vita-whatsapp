@@ -34,18 +34,31 @@ src/
 │   │   │   ├── history/route.ts
 │   │   │   └── export/route.ts
 │   │   ├── cron/
-│   │   │   └── meal-reminder/route.ts    ← Vercel Cron
+│   │   │   ├── meal-reminder/route.ts    ← Vercel Cron 用餐提醒
+│   │   │   ├── daily-digest/route.ts     ← Vercel Cron 每日摘要
+│   │   │   └── weekly-trend/route.ts     ← Vercel Cron 每周趋势
+│   │   ├── auth/
+│   │   │   ├── send-login-link/route.ts  ← 发送登录链接
+│   │   │   └── verify-token/route.ts     ← 验证登录 token
+│   │   ├── feedback/
+│   │   │   ├── submit/route.ts           ← 提交反馈
+│   │   │   ├── report/route.ts           ← 反馈报告
+│   │   │   └── stats/route.ts            ← 反馈统计
+│   │   ├── health/route.ts               ← 健康检查
+│   │   ├── monitoring/metrics/route.ts   ← 监控指标
 │   │   └── debug-logs/route.ts           ← ⚠️ 生产环境需移除
+│   │   # ⚠️ 还有 29 个 test-* 路由待清理（如 test-image/, test-webhook-* 等）
 │   └── ...
 ├── lib/
 │   ├── whatsapp/
 │   │   ├── client.ts                     ← WhatsApp Cloud API 封装
 │   │   ├── webhook-handler.ts            ← 消息路由（签名验证→用户查找→分发）
+│   │   ├── message-router.ts             ← 消息类型分发（文字/图片/交互/语音）
 │   │   ├── text-handler.ts               ← 文字消息（命令匹配 + AI意图 + 食物记录）
 │   │   ├── image-handler.ts              ← 图片消息（下载→压缩→识别→评分→存储）
-│   │   ├── audio-handler.ts              ← 语音消息（Whisper转录→文字流程）
 │   │   ├── interactive-handler.ts        ← 按钮回调（详情/修改/忽略/导航）
-│   │   └── response-formatter-sg.ts      ← 响应格式化（简洁版 + 详情版）
+│   │   ├── response-formatter-sg.ts      ← 响应格式化（简洁版 + 详情版）
+│   │   └── messages-sg.ts               ← 消息模板（新加坡本地化）
 │   ├── food-recognition/
 │   │   ├── recognizer.ts                 ← GPT-4o-mini Vision 调用
 │   │   ├── image-handler.ts              ← sharp 压缩 + hash 计算
@@ -53,24 +66,71 @@ src/
 │   ├── rating/
 │   │   └── rating-engine.ts              ← 健康评分（6因子加权）
 │   ├── ai/
-│   │   └── intent-detector.ts            ← 意图识别（Gemini → OpenAI fallback）
+│   │   ├── unified-intent-detector.ts    ← 统一意图识别（单次AI调用，Gemini → OpenAI fallback）
+│   │   └── intelligent-conversation.ts   ← 智能对话（非食物相关的AI回复）
 │   ├── profile/
 │   │   └── profile-manager.ts            ← 健康档案 CRUD + 多步骤设置流程
 │   ├── digest/
 │   │   └── daily-digest-generator.ts     ← 每日摘要生成
 │   ├── gamification/
-│   │   └── gamification-manager.ts       ← 打卡/成就/排行榜
+│   │   ├── gamification-manager.ts      ← 打卡/成就管理（使用 streak-manager-fixed）
+│   │   └── index.ts                     ← 导出
 │   ├── context/
 │   │   └── context-manager.ts            ← 上下文理解（用餐提醒判断等）
 │   ├── stripe/
 │   │   ├── client.ts                     ← Stripe SDK 初始化
 │   │   └── stripe-manager.ts             ← 订阅管理 + Webhook 处理
+│   ├── phase3/
+│   │   ├── types.ts                      ← Phase3 类型定义
+│   │   ├── service-container.ts          ← 服务容器（懒加载初始化）
+│   │   ├── commands/
+│   │   │   └── command-handler.ts        ← Phase3 命令处理（streak/budget/settings）
+│   │   └── services/
+│   │       ├── streak-manager-fixed.ts   ← 打卡连续天数
+│   │       ├── budget-tracker.ts         ← 每日热量预算
+│   │       ├── preference-manager.ts     ← 饮食偏好 + 过敏警告
+│   │       └── feature-discovery-engine.ts ← 功能发现引导
+│   ├── food-record/
+│   │   ├── food-record-manager.ts       ← 食物记录 CRUD
+│   │   └── history-manager.ts           ← 历史查询
+│   ├── database/
+│   │   ├── schema.ts                    ← 数据库 schema 定义
+│   │   └── functions.ts                 ← 数据库函数调用
 │   ├── cache/
-│   │   └── cache-manager.ts              ← Upstash Redis 缓存
+│   │   └── cache-manager.ts             ← Upstash Redis 缓存
+│   ├── redis/
+│   │   └── client.ts                    ← Redis 客户端初始化
 │   ├── supabase/
-│   │   └── server.ts                     ← Supabase 服务端客户端
+│   │   └── server.ts                    ← Supabase 服务端客户端
+│   ├── openai/
+│   │   └── client.ts                    ← OpenAI SDK 初始化
+│   ├── security/
+│   │   ├── rate-limiter.ts              ← 速率限制
+│   │   ├── encryption.ts               ← 数据加密
+│   │   ├── middleware.ts                ← 安全中间件
+│   │   └── login-monitor.ts            ← 登录监控
+│   ├── error/
+│   │   ├── error-handler.ts             ← 统一错误处理
+│   │   └── retry-manager.ts             ← 重试逻辑
+│   ├── logging/
+│   │   └── logger.ts                    ← 日志工具
+│   ├── monitoring/
+│   │   └── sentry.ts                    ← Sentry 错误监控
+│   ├── cost/
+│   │   ├── cost-monitor.ts              ← API 成本追踪
+│   │   └── cost-optimizer.ts            ← 成本优化策略
+│   ├── network/
+│   │   ├── network-optimizer.ts         ← 网络请求优化
+│   │   └── offline-cache.ts             ← 离线缓存
+│   ├── i18n/
+│   │   ├── translations.ts              ← 多语言翻译
+│   │   └── food-names.ts               ← 食物名称翻译
+│   ├── language/
+│   │   └── detector.ts                  ← 语言检测
+│   ├── feedback/
+│   │   └── feedback-manager.ts          ← 用户反馈收集
 │   └── subscription/
-│       └── index.ts                      ← 订阅层级/配额逻辑
+│       └── subscription-manager.ts      ← 订阅层级/配额逻辑
 ├── config/
 │   └── env.ts                            ← 环境变量验证
 ├── types/
@@ -126,20 +186,25 @@ POST /api/webhook
    ├── 命中 → 执行对应命令
    └── 未命中 → 检查是否在设置流程中
        ├── 是 → profileManager.processSetupInput()
-       └── 否 → intentDetector.detect(text)      // AI意图识别
+       └── 否 → unifiedIntentDetector.detect(text)  // 单次AI统一意图识别
+           ├── FOOD_LOG → tryTextFoodLog()           // 文字食物记录
+           ├── MEAL_ADVICE → tryMealAdvice()         // 餐前建议
+           ├── PROFILE_UPDATE → handleProfileUpdate() // 档案更新
            ├── STATS/HISTORY/PROFILE/... → 执行命令
-           └── UNKNOWN → recognizeFoodFromText()  // 尝试文字食物记录
+           └── GENERAL → handleGeneralChat()         // 通用对话
 ```
 
-### 2.4 AI意图识别（双模型fallback）
+### 2.4 AI统一意图识别（单次调用）
 
 ```
 用户输入 → Gemini 2.0 Flash (便宜快速)
          → 失败? → GPT-4o-mini (稳定)
-         → 都失败? → 返回 UNKNOWN
+         → 都失败? → 返回 GENERAL
 ```
 
-可识别意图: STATS, HISTORY, PROFILE, HELP, START, SETTINGS, UNKNOWN
+单次调用同时完成：意图分类 + 结构化数据提取（食物名/数量/档案字段等）
+
+可识别意图: START, HELP, PROFILE, STATS, HISTORY, SETTINGS, FOOD_LOG, MEAL_ADVICE, PROFILE_UPDATE, QUICK_SETUP, GREETING, STREAK, BUDGET, GENERAL
 
 ---
 
@@ -322,6 +387,14 @@ GET /api/cron/meal-reminder
   Headers: Authorization: Bearer <CRON_SECRET>
   → 检查所有用户，发送用餐提醒
   → Vercel Cron 定时触发
+
+GET /api/cron/daily-digest
+  Headers: Authorization: Bearer <CRON_SECRET>
+  → 生成并发送每日健康摘要
+
+GET /api/cron/weekly-trend
+  Headers: Authorization: Bearer <CRON_SECRET>
+  → 生成并发送每周趋势报告
 ```
 
 ---
@@ -364,7 +437,7 @@ LOG_LEVEL=                    # debug / info / warn / error
 CRON_SECRET=                  # Cron Job 认证密钥
 ```
 
-⚠️ 注意: `gamification-manager.ts` 使用 `SUPABASE_SERVICE_ROLE_KEY` 而非 `SUPABASE_SERVICE_KEY`，需统一。
+⚠️ 注意: `gamification-manager.ts` 使用 `SUPABASE_SERVICE_ROLE_KEY` 而非 `SUPABASE_SERVICE_KEY`，详见"已知问题 #3"。
 
 ---
 
@@ -420,8 +493,26 @@ WhatsApp Interactive Buttons 最多3个按钮，每个标题最多20字符。当
 
 1. **配额检查临时禁用** — `ImageHandler` 中 quota 检查被注释掉，测试完需恢复
 2. **debug-logs 路由** — 生产环境应移除或加认证
-3. **环境变量不一致** — `SUPABASE_SERVICE_ROLE_KEY` vs `SUPABASE_SERVICE_KEY`，gamification-manager 用了前者
+3. **环境变量不一致** — `SUPABASE_SERVICE_ROLE_KEY` vs `SUPABASE_SERVICE_KEY`，需统一
 4. **meal_context 列冲突** — 001迁移定义 VARCHAR CHECK，011迁移又添加 JSONB 类型
 5. **achievements 表重复定义** — 001 和 011 迁移结构不同（001有UNIQUE，011有tier）
 6. **007迁移 SQL 语法** — 部分函数用 `$` 而非 `$$` 作分隔符
 7. **Stripe 价格ID** — 使用占位符字符串，需替换为真实 Stripe Price ID
+8. **测试路由过多** — `src/app/api/` 下仍有 29 个 test-* 路由，生产环境应清理
+9. **__tests__ 类型错误** — 测试文件有 Supabase `never` 类型和缺少 jest/vitest 声明的问题
+
+---
+
+## 八、已清理的功能
+
+以下功能已在代码清理中移除（代码和类型定义均已删除）：
+
+| 已删除 | 原因 |
+|--------|------|
+| `card-generator.ts` (营养卡片) | 纯 stub，社交分享需求不明确 |
+| `reminder-service.ts` (定时提醒服务) | 与 cron job 功能重复 |
+| `comparison-engine.ts` (饮食对比) | 复杂度高，用户需求不明确 |
+| CARD/REMINDERS/COMPARE/PROGRESS/PREFERENCES 意图 | 对应功能已删除 |
+| `/card` `/compare` `/progress` `/reminders` `/preferences` 命令 | 对应功能已删除 |
+
+保留的 Phase 3 功能：Streak（打卡）、Budget（热量预算）、Preferences（饮食偏好/过敏警告）、Settings（用户设置）

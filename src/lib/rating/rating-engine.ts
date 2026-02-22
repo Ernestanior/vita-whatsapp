@@ -62,8 +62,8 @@ export class RatingEngine {
       this.evaluateGI(food),
     ];
 
-    // 3. Calculate overall score
-    const score = this.calculateScore(factors);
+    // 3. Calculate overall score (weighted by user goal)
+    const score = this.calculateScore(factors, profile.goal);
 
     // 4. Determine overall rating
     const overall = this.getOverallRating(score);
@@ -390,23 +390,36 @@ export class RatingEngine {
 
   /**
    * Calculate overall score from factor evaluations
+   * Weights shift based on user goal for more relevant scoring
    */
-  private calculateScore(factors: FactorEvaluation[]): number {
-    // Weighted average
-    const weights: Record<string, number> = {
-      Calories: 0.25,
-      Sodium: 0.20,
-      Fat: 0.15,
-      Balance: 0.15,
-      'Nutri-Grade': 0.15,
-      'GI Level': 0.10,
+  private calculateScore(factors: FactorEvaluation[], goal: HealthProfile['goal']): number {
+    // Goal-specific weight profiles
+    const weightProfiles: Record<HealthProfile['goal'], Record<string, number>> = {
+      'maintain': {
+        Calories: 0.25, Sodium: 0.20, Fat: 0.15,
+        Balance: 0.15, 'Nutri-Grade': 0.15, 'GI Level': 0.10,
+      },
+      'lose-weight': {
+        Calories: 0.30, Sodium: 0.15, Fat: 0.20,
+        Balance: 0.10, 'Nutri-Grade': 0.10, 'GI Level': 0.15,
+      },
+      'gain-muscle': {
+        Calories: 0.10, Sodium: 0.15, Fat: 0.10,
+        Balance: 0.35, 'Nutri-Grade': 0.10, 'GI Level': 0.20,
+      },
+      'control-sugar': {
+        Calories: 0.15, Sodium: 0.15, Fat: 0.10,
+        Balance: 0.10, 'Nutri-Grade': 0.25, 'GI Level': 0.25,
+      },
     };
+
+    const weights = weightProfiles[goal] || weightProfiles['maintain'];
 
     let totalScore = 0;
     let totalWeight = 0;
 
     for (const factor of factors) {
-      const weight = weights[factor.name as keyof typeof weights] || 0;
+      const weight = weights[factor.name] || 0;
       totalScore += factor.score * weight;
       totalWeight += weight;
     }

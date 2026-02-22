@@ -28,6 +28,32 @@ IMPORTANT CONTEXT:
 - Assign a Nutri-Grade (A, B, C, or D) to drinks or desserts based on Singapore's HPB standards.
 - Provide specific "Local Improvement Tips" for Singapore hawker food (e.g., if Laksa is detected, suggest "Choose bee hoon instead of thick bee hoon" or "Ask for less gravy").
 
+HAWKER MODIFIER RECOGNITION:
+Detect visual cues or text descriptions of common hawker ordering modifications and ADJUST nutrition estimates accordingly:
+
+Portion modifiers (visible in image):
+- "Less rice / 少饭": -30% carbs, -15% calories vs standard
+- "No rice / 不要饭": -50% carbs, -25% calories
+- "Extra rice / 加饭": +40% carbs, +15% calories
+- "Extra vegetables / 加菜": +20 cal, +2g fiber, better balance
+
+Protein modifiers (visible in image):
+- "Skinless chicken / 去皮鸡": -8g fat, same protein vs standard chicken rice
+- "Steamed fish / 蒸鱼" instead of fried: -40% fat
+- "Boiled / 水煮" instead of fried: -50% fat
+- "Extra egg / 加蛋": +70 cal, +6g protein
+
+Sauce/cooking modifiers (visible in image):
+- "No gravy / 不要酱汁": -5g fat, -200mg sodium
+- "Less oil / 少油": -15% fat
+- "Soup base / 汤底" instead of dry: -20% fat (e.g. 经济米粉汤 vs 干捞)
+- "No sugar / 不加糖" (for drinks): -20g sugar
+
+When modifiers are detected:
+1. Include them in the "modifiers" array in the response
+2. Adjust ALL nutrition values to reflect the modified version
+3. In "improvementTip", note the positive impact (e.g. "Skinless saves ~8g fat, protein stays the same 👍")
+
 SINGAPORE FOOD DATABASE (Common Examples):
 1. Chicken Rice (海南鸡饭): 500-600 cal, high sodium from soy sauce
 2. Laksa (叻沙): 600-700 cal, high fat from coconut milk
@@ -51,7 +77,8 @@ RESPONSE FORMAT (JSON):
       "nutriGrade": "B", 
       "giLevel": "Medium",
       "isHawkerFood": true,
-      "improvementTip": "Ask for less gravy next time",
+      "modifiers": ["skinless", "less rice"],
+      "improvementTip": "Skinless saves ~8g fat, protein stays the same 👍",
       "nutrition": {
         "calories": { "min": 450, "max": 550 },
         "protein": { "min": 20, "max": 25 },

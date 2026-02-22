@@ -37,9 +37,14 @@ export class ResponseFormatterSG {
     const food = result.foods[0];
     const total = result.totalNutrition;
     const avgCal = Math.round((total.calories.min + total.calories.max) / 2);
+    const avgProtein = Math.round((total.protein.min + total.protein.max) / 2);
+    const avgCarbs = Math.round((total.carbs.min + total.carbs.max) / 2);
 
     let response = `${emoji} *${food.nameLocal || food.name}*\n`;
-    response += `${avgCal} kcal · ${score}/100\n`;
+    if (food.modifiers && food.modifiers.length > 0) {
+      response += `✨ ${food.modifiers.join(', ')}\n`;
+    }
+    response += `${avgCal} kcal · P${avgProtein}g · C${avgCarbs}g · ${score}/100\n`;
 
     // Streak (one line max)
     if (phase3Data?.streak && phase3Data.streak.current > 0) {
@@ -81,6 +86,9 @@ export class ResponseFormatterSG {
     // All food items
     for (const food of result.foods) {
       response += `*${food.nameLocal || food.name}* (${food.portion})\n`;
+      if (food.modifiers && food.modifiers.length > 0) {
+        response += `✨ ${food.modifiers.join(', ')}\n`;
+      }
       response += `${avg(food.nutrition.calories)} kcal`;
       if (food.nutriGrade) response += ` · Nutri-Grade ${food.nutriGrade}`;
       if (food.giLevel) response += ` · GI: ${food.giLevel}`;

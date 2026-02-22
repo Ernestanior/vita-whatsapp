@@ -24,11 +24,6 @@ INTENTS:
 - SETTINGS: User wants to change settings/language.
 - STREAK: Streak/check-in info. "连续", "打卡", "streak"
 - BUDGET: Calorie budget. "预算", "budget"
-- CARD: Nutrition card. "卡片", "card"
-- REMINDERS: Manage reminders. "提醒", "reminders"
-- COMPARE: Compare meals. "对比", "compare"
-- PROGRESS: Progress report. "进度", "progress"
-- PREFERENCES: Dietary preferences. "偏好", "preferences"
 - GREETING: Simple greeting. "你好", "hi", "hello", "嗨"
 - GENERAL: Anything else — nutrition questions, general chat, unclear.
 

@@ -39,6 +39,7 @@ export interface FoodItem {
   nutriGrade?: 'A' | 'B' | 'C' | 'D';
   giLevel?: 'Low' | 'Medium' | 'High';
   isHawkerFood?: boolean;
+  modifiers?: string[];
   improvementTip?: string;
   nutrition: NutritionData;
 }
@@ -145,4 +146,9 @@ export interface DailyDigest {
   insights: string[];
   recommendations: string[];
   exerciseSuggestion?: string;
+  target?: {
+    calories: number;
+    protein: number;
+    carbs: number;
+  };
 }

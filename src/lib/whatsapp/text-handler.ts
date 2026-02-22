@@ -32,13 +32,6 @@ export class TextHandler {
     '连续': UserIntent.STREAK, '連續': UserIntent.STREAK, '/打卡': UserIntent.STREAK, '打卡': UserIntent.STREAK,
     '/budget': UserIntent.BUDGET, 'budget': UserIntent.BUDGET, '/预算': UserIntent.BUDGET, '/預算': UserIntent.BUDGET,
     '预算': UserIntent.BUDGET, '預算': UserIntent.BUDGET,
-    '/card': UserIntent.CARD, 'card': UserIntent.CARD, '/卡片': UserIntent.CARD, '卡片': UserIntent.CARD,
-    '/reminders': UserIntent.REMINDERS, 'reminders': UserIntent.REMINDERS, '/提醒': UserIntent.REMINDERS, '提醒': UserIntent.REMINDERS,
-    '/compare': UserIntent.COMPARE, 'compare': UserIntent.COMPARE, '/对比': UserIntent.COMPARE, '/對比': UserIntent.COMPARE,
-    '对比': UserIntent.COMPARE, '對比': UserIntent.COMPARE,
-    '/progress': UserIntent.PROGRESS, 'progress': UserIntent.PROGRESS, '/进度': UserIntent.PROGRESS, '/進度': UserIntent.PROGRESS,
-    '进度': UserIntent.PROGRESS, '進度': UserIntent.PROGRESS,
-    '/preferences': UserIntent.PREFERENCES, 'preferences': UserIntent.PREFERENCES, '/偏好': UserIntent.PREFERENCES, '偏好': UserIntent.PREFERENCES,
   };
 
   /**
@@ -135,11 +128,6 @@ export class TextHandler {
       // Phase 3 commands
       case UserIntent.STREAK:
       case UserIntent.BUDGET:
-      case UserIntent.CARD:
-      case UserIntent.REMINDERS:
-      case UserIntent.COMPARE:
-      case UserIntent.PROGRESS:
-      case UserIntent.PREFERENCES:
         await this.handlePhase3Command(intent, message.from, context, text);
         break;
 
@@ -193,11 +181,6 @@ export class TextHandler {
     const intentToPhase3: Record<string, string> = {
       [UserIntent.STREAK]: 'streak',
       [UserIntent.BUDGET]: 'budget',
-      [UserIntent.CARD]: 'card',
-      [UserIntent.REMINDERS]: 'reminders',
-      [UserIntent.COMPARE]: 'compare',
-      [UserIntent.PROGRESS]: 'progress',
-      [UserIntent.PREFERENCES]: 'preferences',
     };
 
     const phase3Command = intentToPhase3[intent] as any;

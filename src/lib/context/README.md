@@ -243,7 +243,7 @@ if (isPreferred) {
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+SUPABASE_SERVICE_KEY=your_service_role_key
 ```
 
 ### 数据库迁移

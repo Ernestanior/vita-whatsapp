@@ -10,16 +10,10 @@ import { createClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 
-export type Phase3Command = 
-  | 'streak' 
-  | 'stats' 
-  | 'budget' 
-  | 'card' 
-  | 'reminders' 
-  | 'compare' 
-  | 'progress' 
-  | 'preferences' 
-  | 'settings';
+export type Phase3Command =
+  | 'streak'
+  | 'stats'
+  | 'budget';
 
 export class Phase3CommandHandler {
   private container: ServiceContainer;
@@ -54,22 +48,6 @@ export class Phase3CommandHandler {
 
         case 'budget':
           await this.handleBudgetCommand(userId, language, args);
-          break;
-
-        case 'reminders':
-          await this.handleRemindersCommand(userId, language, args);
-          break;
-
-        case 'preferences':
-        case 'settings':
-          await this.handlePreferencesCommand(userId, language);
-          break;
-
-        case 'card':
-        case 'compare':
-        case 'progress':
-          // Simplified: redirect to weekly report info
-          await this.sendDeprecatedMessage(userId, language);
           break;
 
         default:
@@ -281,175 +259,6 @@ ${status.message || ''}
   }
 
   /**
-   * Handle card command
-   */
-  private async handleCardCommand(
-    userId: string,
-    language: 'en' | 'zh-CN' | 'zh-TW',
-    args?: string[]
-  ): Promise<void> {
-    const messages = {
-      'en': `📊 *Visual Cards*
-
-This feature is coming soon! You'll be able to generate:
-• Daily summary cards
-• Weekly progress cards
-• Achievement celebration cards
-
-Stay tuned! 🎨`,
-      
-      'zh-CN': `📊 *可视化卡片*
-
-此功能即将上线！您将能够生成：
-• 每日总结卡片
-• 每周进度卡片
-• 成就庆祝卡片
-
-敬请期待！🎨`,
-      
-      'zh-TW': `📊 *可視化卡片*
-
-此功能即將上線！您將能夠生成：
-• 每日總結卡片
-• 每週進度卡片
-• 成就慶祝卡片
-
-敬請期待！🎨`,
-    };
-
-    await whatsappClient.sendTextMessage(userId, messages[language]);
-  }
-
-  /**
-   * Handle reminders command
-   */
-  private async handleRemindersCommand(
-    userId: string,
-    language: 'en' | 'zh-CN' | 'zh-TW',
-    args?: string[]
-  ): Promise<void> {
-    const messages = {
-      'en': `⏰ *Meal Reminders*
-
-This feature is coming soon! You'll be able to:
-• Set reminder times for meals
-• Configure quiet hours
-• Get streak protection alerts
-
-Stay tuned! 🔔`,
-      
-      'zh-CN': `⏰ *餐食提醒*
-
-此功能即将上线！您将能够：
-• 设置餐食提醒时间
-• 配置免打扰时段
-• 获取连续保护提醒
-
-敬请期待！🔔`,
-      
-      'zh-TW': `⏰ *餐食提醒*
-
-此功能即將上線！您將能夠：
-• 設置餐食提醒時間
-• 配置免打擾時段
-• 獲取連續保護提醒
-
-敬請期待！🔔`,
-    };
-
-    await whatsappClient.sendTextMessage(userId, messages[language]);
-  }
-
-  /**
-   * Handle compare/progress command
-   */
-  private async handleCompareCommand(
-    userId: string,
-    language: 'en' | 'zh-CN' | 'zh-TW'
-  ): Promise<void> {
-    const messages = {
-      'en': `📈 *Progress Comparison*
-
-This feature is coming soon! You'll be able to see:
-• Week-over-week comparisons
-• Eating pattern analysis
-• Similar meal detection
-• Top foods by frequency
-
-Stay tuned! 📊`,
-      
-      'zh-CN': `📈 *进度对比*
-
-此功能即将上线！您将能够查看：
-• 周对周对比
-• 饮食模式分析
-• 相似餐食检测
-• 高频食物排行
-
-敬请期待！📊`,
-      
-      'zh-TW': `📈 *進度對比*
-
-此功能即將上線！您將能夠查看：
-• 週對週對比
-• 飲食模式分析
-• 相似餐食檢測
-• 高頻食物排行
-
-敬請期待！📊`,
-    };
-
-    await whatsappClient.sendTextMessage(userId, messages[language]);
-  }
-
-  /**
-   * Handle preferences/settings command
-   */
-  private async handlePreferencesCommand(
-    userId: string,
-    language: 'en' | 'zh-CN' | 'zh-TW'
-  ): Promise<void> {
-    const preferenceManager = this.container.getPreferenceManager();
-    
-    // Get user UUID
-    const userUuid = await this.getUserUuid(userId);
-    if (!userUuid) {
-      await this.sendUserNotFoundMessage(userId, language);
-      return;
-    }
-
-    const prefs = await preferenceManager.getPreferences(userUuid);
-
-    const messages = {
-      'en': `⚙️ *Your Preferences*
-
-${prefs.dietaryType.length > 0 ? `🥗 *Dietary Type:* ${prefs.dietaryType.join(', ')}\n` : ''}${prefs.allergies.length > 0 ? `⚠️ *Allergies:* ${prefs.allergies.map(a => a.allergen).join(', ')}\n` : ''}${prefs.favorites.length > 0 ? `❤️ *Favorites:* ${prefs.favorites.slice(0, 3).join(', ')}\n` : ''}
-${prefs.dietaryType.length === 0 && prefs.allergies.length === 0 ? 'No preferences set yet.\n\n' : ''}To update, just tell me naturally:
-"I'm vegetarian" or "I'm allergic to peanuts"
-
-I'll learn your preferences as you use the app! 🎯`,
-      
-      'zh-CN': `⚙️ *您的偏好*
-
-${prefs.dietaryType.length > 0 ? `🥗 *饮食类型:* ${prefs.dietaryType.join('、')}\n` : ''}${prefs.allergies.length > 0 ? `⚠️ *过敏原:* ${prefs.allergies.map(a => a.allergen).join('、')}\n` : ''}${prefs.favorites.length > 0 ? `❤️ *最爱:* ${prefs.favorites.slice(0, 3).join('、')}\n` : ''}
-${prefs.dietaryType.length === 0 && prefs.allergies.length === 0 ? '还没有设置偏好。\n\n' : ''}要更新，直接告诉我：
-"我是素食者" 或 "我对花生过敏"
-
-我会在您使用时学习您的偏好！🎯`,
-      
-      'zh-TW': `⚙️ *您的偏好*
-
-${prefs.dietaryType.length > 0 ? `🥗 *飲食類型:* ${prefs.dietaryType.join('、')}\n` : ''}${prefs.allergies.length > 0 ? `⚠️ *過敏原:* ${prefs.allergies.map(a => a.allergen).join('、')}\n` : ''}${prefs.favorites.length > 0 ? `❤️ *最愛:* ${prefs.favorites.slice(0, 3).join('、')}\n` : ''}
-${prefs.dietaryType.length === 0 && prefs.allergies.length === 0 ? '還沒有設置偏好。\n\n' : ''}要更新，直接告訴我：
-"我是素食者" 或 "我對花生過敏"
-
-我會在您使用時學習您的偏好！🎯`,
-    };
-
-    await whatsappClient.sendTextMessage(userId, messages[language]);
-  }
-
-  /**
    * Get user UUID from phone number
    */
   private async getUserUuid(phoneNumber: string): Promise<string | null> {
@@ -473,22 +282,6 @@ ${prefs.dietaryType.length === 0 && prefs.allergies.length === 0 ? '還沒有設
       'en': '❌ User not found. Please send a food photo first to get started!',
       'zh-CN': '❌ 未找到用户。请先发送食物照片开始使用！',
       'zh-TW': '❌ 未找到用戶。請先發送食物照片開始使用！',
-    };
-
-    await whatsappClient.sendTextMessage(userId, messages[language]);
-  }
-
-  /**
-   * Send message for deprecated commands (card, compare, progress)
-   */
-  private async sendDeprecatedMessage(
-    userId: string,
-    language: 'en' | 'zh-CN' | 'zh-TW'
-  ): Promise<void> {
-    const messages = {
-      'en': '📊 Your weekly report is sent every Sunday automatically! Use "streak" to check your progress.',
-      'zh-CN': '📊 每周报告会在每周日自动发送！输入"连续"查看你的进度。',
-      'zh-TW': '📊 每週報告會在每週日自動發送！輸入"連續"查看你的進度。',
     };
 
     await whatsappClient.sendTextMessage(userId, messages[language]);

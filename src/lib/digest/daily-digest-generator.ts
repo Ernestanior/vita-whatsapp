@@ -90,6 +90,11 @@ export class DailyDigestGenerator {
         insights,
         recommendations,
         exerciseSuggestion,
+        target: {
+          calories: target.calories,
+          protein: target.protein,
+          carbs: target.carbs,
+        },
       };
     } catch (error) {
       logger.error({ error, userId, date }, 'Failed to generate daily digest');
@@ -456,6 +461,18 @@ ${digest.recommendations.join('\n')}
   }
 
   /**
+   * Generate a text progress bar for WhatsApp
+   * e.g. "▓▓▓▓▓▓░░░░ 60%"
+   */
+  private progressBar(current: number, target: number, width: number = 8): string {
+    const pct = Math.min(Math.round((current / target) * 100), 999);
+    const filled = Math.min(Math.round((current / target) * width), width);
+    const empty = width - filled;
+    const over = pct > 100;
+    return `${'▓'.repeat(filled)}${'░'.repeat(empty)} ${pct}%${over ? ' ⚠️' : ''}`;
+  }
+
+  /**
    * Format English digest
    */
   private formatEnglishDigest(digest: DailyDigest): string {
@@ -466,19 +483,27 @@ ${digest.recommendations.join('\n')}
     // Summary section
     message += `📊 Today's Overview:\n`;
     message += `• Meals tracked: ${summary.mealsCount}\n`;
-    message += `• Total calories: ${summary.totalCalories} kcal\n`;
     message += `• Health score: ${summary.healthScore}/100\n`;
     message += `• Ratings: `;
     message += `🟢${summary.ratingDistribution.green} `;
     message += `🟡${summary.ratingDistribution.yellow} `;
     message += `🔴${summary.ratingDistribution.red}\n\n`;
 
-    // Nutrition breakdown
+    // Nutrition breakdown with progress bars
+    const t = digest.target;
     message += `🍽️ Nutrition Breakdown:\n`;
-    message += `• Protein: ${summary.nutritionBreakdown.protein}g\n`;
-    message += `• Carbs: ${summary.nutritionBreakdown.carbs}g\n`;
-    message += `• Fat: ${summary.nutritionBreakdown.fat}g\n`;
-    message += `• Sodium: ${summary.nutritionBreakdown.sodium}mg\n\n`;
+    if (t) {
+      message += `• Cal: ${summary.totalCalories}/${t.calories} kcal ${this.progressBar(summary.totalCalories, t.calories)}\n`;
+      message += `• Protein: ${summary.nutritionBreakdown.protein}/${t.protein}g ${this.progressBar(summary.nutritionBreakdown.protein, t.protein)}\n`;
+      message += `• Carbs: ${summary.nutritionBreakdown.carbs}/${t.carbs}g ${this.progressBar(summary.nutritionBreakdown.carbs, t.carbs)}\n`;
+      message += `• Fat: ${summary.nutritionBreakdown.fat}g\n`;
+      message += `• Sodium: ${summary.nutritionBreakdown.sodium}mg\n\n`;
+    } else {
+      message += `• Protein: ${summary.nutritionBreakdown.protein}g\n`;
+      message += `• Carbs: ${summary.nutritionBreakdown.carbs}g\n`;
+      message += `• Fat: ${summary.nutritionBreakdown.fat}g\n`;
+      message += `• Sodium: ${summary.nutritionBreakdown.sodium}mg\n\n`;
+    }
 
     // Insights
     if (digest.insights.length > 0) {
@@ -519,19 +544,27 @@ ${digest.recommendations.join('\n')}
     // Summary section
     message += `📊 今日概览：\n`;
     message += `• 记录餐数：${summary.mealsCount}\n`;
-    message += `• 总卡路里：${summary.totalCalories} 千卡\n`;
     message += `• 健康评分：${summary.healthScore}/100\n`;
     message += `• 评级分布：`;
     message += `🟢${summary.ratingDistribution.green} `;
     message += `🟡${summary.ratingDistribution.yellow} `;
     message += `🔴${summary.ratingDistribution.red}\n\n`;
 
-    // Nutrition breakdown
+    // Nutrition breakdown with progress bars
+    const t = digest.target;
     message += `🍽️ 营养摄入：\n`;
-    message += `• 蛋白质：${summary.nutritionBreakdown.protein}克\n`;
-    message += `• 碳水化合物：${summary.nutritionBreakdown.carbs}克\n`;
-    message += `• 脂肪：${summary.nutritionBreakdown.fat}克\n`;
-    message += `• 钠：${summary.nutritionBreakdown.sodium}毫克\n\n`;
+    if (t) {
+      message += `• 热量：${summary.totalCalories}/${t.calories}千卡 ${this.progressBar(summary.totalCalories, t.calories)}\n`;
+      message += `• 蛋白质：${summary.nutritionBreakdown.protein}/${t.protein}克 ${this.progressBar(summary.nutritionBreakdown.protein, t.protein)}\n`;
+      message += `• 碳水：${summary.nutritionBreakdown.carbs}/${t.carbs}克 ${this.progressBar(summary.nutritionBreakdown.carbs, t.carbs)}\n`;
+      message += `• 脂肪：${summary.nutritionBreakdown.fat}克\n`;
+      message += `• 钠：${summary.nutritionBreakdown.sodium}毫克\n\n`;
+    } else {
+      message += `• 蛋白质：${summary.nutritionBreakdown.protein}克\n`;
+      message += `• 碳水化合物：${summary.nutritionBreakdown.carbs}克\n`;
+      message += `• 脂肪：${summary.nutritionBreakdown.fat}克\n`;
+      message += `• 钠：${summary.nutritionBreakdown.sodium}毫克\n\n`;
+    }
 
     // Insights
     if (digest.insights.length > 0) {
@@ -572,19 +605,27 @@ ${digest.recommendations.join('\n')}
     // Summary section
     message += `📊 今日概覽：\n`;
     message += `• 記錄餐數：${summary.mealsCount}\n`;
-    message += `• 總卡路里：${summary.totalCalories} 千卡\n`;
     message += `• 健康評分：${summary.healthScore}/100\n`;
     message += `• 評級分佈：`;
     message += `🟢${summary.ratingDistribution.green} `;
     message += `🟡${summary.ratingDistribution.yellow} `;
     message += `🔴${summary.ratingDistribution.red}\n\n`;
 
-    // Nutrition breakdown
+    // Nutrition breakdown with progress bars
+    const t = digest.target;
     message += `🍽️ 營養攝入：\n`;
-    message += `• 蛋白質：${summary.nutritionBreakdown.protein}克\n`;
-    message += `• 碳水化合物：${summary.nutritionBreakdown.carbs}克\n`;
-    message += `• 脂肪：${summary.nutritionBreakdown.fat}克\n`;
-    message += `• 鈉：${summary.nutritionBreakdown.sodium}毫克\n\n`;
+    if (t) {
+      message += `• 熱量：${summary.totalCalories}/${t.calories}千卡 ${this.progressBar(summary.totalCalories, t.calories)}\n`;
+      message += `• 蛋白質：${summary.nutritionBreakdown.protein}/${t.protein}克 ${this.progressBar(summary.nutritionBreakdown.protein, t.protein)}\n`;
+      message += `• 碳水：${summary.nutritionBreakdown.carbs}/${t.carbs}克 ${this.progressBar(summary.nutritionBreakdown.carbs, t.carbs)}\n`;
+      message += `• 脂肪：${summary.nutritionBreakdown.fat}克\n`;
+      message += `• 鈉：${summary.nutritionBreakdown.sodium}毫克\n\n`;
+    } else {
+      message += `• 蛋白質：${summary.nutritionBreakdown.protein}克\n`;
+      message += `• 碳水化合物：${summary.nutritionBreakdown.carbs}克\n`;
+      message += `• 脂肪：${summary.nutritionBreakdown.fat}克\n`;
+      message += `• 鈉：${summary.nutritionBreakdown.sodium}毫克\n\n`;
+    }
 
     // Insights
     if (digest.insights.length > 0) {
