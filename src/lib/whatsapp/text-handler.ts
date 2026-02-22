@@ -331,10 +331,10 @@ export class TextHandler {
    */
   private async detectIntentWithAI(text: string): Promise<Command> {
     const { intentDetector, Intent } = await import('@/lib/ai/intent-detector');
-    
+
     const intent = await intentDetector.detect(text);
 
-    // Map Intent enum to Command enum
+    // FOOD_LOG maps to UNKNOWN so it flows to handleNaturalLanguage → tryTextFoodLog
     const intentMap: Record<string, Command> = {
       [Intent.STATS]: Command.STATS,
       [Intent.HISTORY]: Command.HISTORY,
@@ -342,6 +342,7 @@ export class TextHandler {
       [Intent.HELP]: Command.HELP,
       [Intent.START]: Command.START,
       [Intent.SETTINGS]: Command.SETTINGS,
+      [Intent.FOOD_LOG]: Command.UNKNOWN,
       [Intent.UNKNOWN]: Command.UNKNOWN,
     };
 

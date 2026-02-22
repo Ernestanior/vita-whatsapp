@@ -7,7 +7,8 @@
       "Bash(curl -s -X POST \"https://nxuqujajfrxyqloouatb.supabase.co/rest/v1/rpc/pgmeta\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54dXF1amFqZnJ4eXFsb291YXRiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTEzNDgyOSwiZXhwIjoyMDg2NzEwODI5fQ.uuu64UvYa_eODBmhftIZSbmrxTE-C2Q-ZR0869X2bbQ\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54dXF1amFqZnJ4eXFsb291YXRiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTEzNDgyOSwiZXhwIjoyMDg2NzEwODI5fQ.uuu64UvYa_eODBmhftIZSbmrxTE-C2Q-ZR0869X2bbQ\" -H \"Content-Type: application/json\")",
       "Bash(curl -s -X POST \"https://api.supabase.com/v1/projects/nxuqujajfrxyqloouatb/database/query\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54dXF1amFqZnJ4eXFsb291YXRiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTEzNDgyOSwiZXhwIjoyMDg2NzEwODI5fQ.uuu64UvYa_eODBmhftIZSbmrxTE-C2Q-ZR0869X2bbQ\" -H \"Content-Type: application/json\" -d '{\"\"query\"\": \"\"SELECT column_name, is_nullable FROM information_schema.columns WHERE table_name = ''''food_records'''' AND column_name IN \\(''''image_url'''', ''''image_hash''''\\)\"\" }')",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }

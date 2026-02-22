@@ -1,0 +1,427 @@
+# Vita AI — 开发者文档
+
+## 快速开始
+
+```bash
+git clone <repo-url>
+cd vita-whatsapp
+npm install
+cp .env.example .env.local   # 填写环境变量
+npm run dev                   # http://localhost:3000
+```
+
+**技术栈**: Next.js 16 (App Router) + TypeScript + Supabase (PostgreSQL) + OpenAI GPT-4o-mini + Google Gemini 2.0 Flash + Stripe + Upstash Redis + sharp
+**部署**: Vercel (Serverless)
+**包管理**: npm
+
+---
+
+## 一、项目结构
+
+```
+src/
+├── app/
+│   ├── api/
+│   │   ├── webhook/route.ts              ← WhatsApp Webhook 入口
+│   │   ├── stripe/
+│   │   │   ├── webhook/route.ts          ← Stripe Webhook
+│   │   │   ├── create-subscription/route.ts
+│   │   │   ├── cancel-subscription/route.ts
+│   │   │   ├── billing-portal/route.ts
+│   │   │   └── products/route.ts
+│   │   ├── dashboard/
+│   │   │   ├── stats/route.ts
+│   │   │   ├── history/route.ts
+│   │   │   └── export/route.ts
+│   │   ├── cron/
+│   │   │   └── meal-reminder/route.ts    ← Vercel Cron
+│   │   └── debug-logs/route.ts           ← ⚠️ 生产环境需移除
+│   └── ...
+├── lib/
+│   ├── whatsapp/
+│   │   ├── client.ts                     ← WhatsApp Cloud API 封装
+│   │   ├── webhook-handler.ts            ← 消息路由（签名验证→用户查找→分发）
+│   │   ├── text-handler.ts               ← 文字消息（命令匹配 + AI意图 + 食物记录）
+│   │   ├── image-handler.ts              ← 图片消息（下载→压缩→识别→评分→存储）
+│   │   ├── audio-handler.ts              ← 语音消息（Whisper转录→文字流程）
+│   │   ├── interactive-handler.ts        ← 按钮回调（详情/修改/忽略/导航）
+│   │   └── response-formatter-sg.ts      ← 响应格式化（简洁版 + 详情版）
+│   ├── food-recognition/
+│   │   ├── recognizer.ts                 ← GPT-4o-mini Vision 调用
+│   │   ├── image-handler.ts              ← sharp 压缩 + hash 计算
+│   │   └── prompts.ts                    ← System/User prompt 模板
+│   ├── rating/
+│   │   └── rating-engine.ts              ← 健康评分（6因子加权）
+│   ├── ai/
+│   │   └── intent-detector.ts            ← 意图识别（Gemini → OpenAI fallback）
+│   ├── profile/
+│   │   └── profile-manager.ts            ← 健康档案 CRUD + 多步骤设置流程
+│   ├── digest/
+│   │   └── daily-digest-generator.ts     ← 每日摘要生成
+│   ├── gamification/
+│   │   └── gamification-manager.ts       ← 打卡/成就/排行榜
+│   ├── context/
+│   │   └── context-manager.ts            ← 上下文理解（用餐提醒判断等）
+│   ├── stripe/
+│   │   ├── client.ts                     ← Stripe SDK 初始化
+│   │   └── stripe-manager.ts             ← 订阅管理 + Webhook 处理
+│   ├── cache/
+│   │   └── cache-manager.ts              ← Upstash Redis 缓存
+│   ├── supabase/
+│   │   └── server.ts                     ← Supabase 服务端客户端
+│   └── subscription/
+│       └── index.ts                      ← 订阅层级/配额逻辑
+├── config/
+│   └── env.ts                            ← 环境变量验证
+├── types/
+│   ├── index.ts                          ← 核心类型定义
+│   └── whatsapp.ts                       ← WhatsApp 消息类型
+└── utils/
+    └── logger.ts                         ← 日志工具
+```
+
+---
+
+## 二、核心流程
+
+### 2.1 消息处理主流程
+
+```
+POST /api/webhook
+  → webhookHandler.handleWebhook(payload, rawBody, signature)
+    → HMAC SHA-256 签名验证
+    → 提取 messages[] 和 contacts[]
+    → 查找/创建用户 (users 表)
+    → 根据 message.type 路由:
+```
+
+| 消息类型 | Handler | 处理逻辑 |
+|---------|---------|---------|
+| `text` | TextHandler | 命令匹配 → 设置流程检查 → AI意图识别 → 文字食物记录 |
+| `image` | ImageHandler | 下载 → sharp压缩 → hash缓存检查 → GPT-4o-mini Vision → 评分 → 存储 |
+| `audio` | AudioHandler | 下载 → Whisper转录 → 进入TextHandler文字食物流程 |
+| `interactive` | InteractiveHandler | 解析button_reply.id → detail/modify/ignore/navigation |
+
+### 2.2 图片食物识别流程
+
+```typescript
+// ImageHandler.handle()
+1. whatsappClient.downloadMedia(mediaId)        // 下载原图
+2. imageHandler.validateImage(buffer)            // 验证格式
+3. imageHandler.processImage(buffer)             // sharp压缩 + hash
+4. cacheManager.get(hash)                        // Redis缓存检查
+5. recognizer.recognizeFood(buffer, context)     // GPT-4o-mini Vision
+6. ratingEngine.evaluate(result, profile)        // 健康评分
+7. supabase.insert('food_records', {...})         // 自动存储
+8. gamificationManager.updateStreak(userId)      // 更新打卡
+9. responseFormatterSG.formatResponse(...)       // 格式化简洁回复
+10. whatsappClient.sendButtonMessage(...)        // 发送结果+按钮
+```
+
+### 2.3 文字命令识别流程
+
+```typescript
+// TextHandler.handle()
+1. recognizeCommand(text)                        // 精确匹配（快速路径）
+   ├── 命中 → 执行对应命令
+   └── 未命中 → 检查是否在设置流程中
+       ├── 是 → profileManager.processSetupInput()
+       └── 否 → intentDetector.detect(text)      // AI意图识别
+           ├── STATS/HISTORY/PROFILE/... → 执行命令
+           └── UNKNOWN → recognizeFoodFromText()  // 尝试文字食物记录
+```
+
+### 2.4 AI意图识别（双模型fallback）
+
+```
+用户输入 → Gemini 2.0 Flash (便宜快速)
+         → 失败? → GPT-4o-mini (稳定)
+         → 都失败? → 返回 UNKNOWN
+```
+
+可识别意图: STATS, HISTORY, PROFILE, HELP, START, SETTINGS, UNKNOWN
+
+---
+
+## 三、数据库 Schema
+
+### 3.1 核心表
+
+```sql
+-- 用户
+users (id UUID PK, phone_number TEXT UNIQUE, language TEXT DEFAULT 'en', created_at, updated_at)
+
+-- 健康档案
+health_profiles (id UUID PK, user_id FK→users, height, weight, age, gender,
+                 goal TEXT, activity_level TEXT, digest_time TEXT DEFAULT '21:00',
+                 quick_mode BOOLEAN DEFAULT true)
+
+-- 食物记录 (核心业务表)
+food_records (id UUID PK, user_id FK→users,
+              image_url TEXT NULL,           -- 文字/语音记录时为null
+              image_hash TEXT NULL,          -- 文字/语音记录时为null
+              recognition_result JSONB,      -- FoodRecognitionResult
+              health_rating JSONB,           -- HealthRating
+              meal_context VARCHAR,          -- breakfast/lunch/dinner/snack
+              created_at TIMESTAMPTZ)
+
+-- 订阅
+subscriptions (id UUID PK, user_id FK→users, tier TEXT, status TEXT,
+               stripe_subscription_id TEXT, stripe_customer_id TEXT,
+               current_period_start, current_period_end)
+
+-- 每日配额
+usage_quotas (id UUID PK, user_id FK→users, date DATE,
+              recognitions_used INT DEFAULT 0, recognitions_limit INT DEFAULT 3,
+              UNIQUE(user_id, date))
+```
+
+### 3.2 游戏化表
+
+```sql
+-- 打卡
+user_streaks (id UUID PK, user_id FK UNIQUE, current_streak INT DEFAULT 0,
+              longest_streak INT DEFAULT 0, last_checkin_date DATE,
+              total_checkins INT DEFAULT 0, freeze_cards INT DEFAULT 1)
+
+-- 每日预算
+daily_budgets (id UUID PK, user_id FK, date DATE, calorie_target INT,
+               calories_consumed INT DEFAULT 0, UNIQUE(user_id, date))
+
+-- 成就
+achievements (id UUID PK, user_id FK, achievement_code TEXT,
+              achievement_tier TEXT, unlocked_at TIMESTAMPTZ)
+
+-- 提醒
+reminders (id UUID PK, user_id FK, meal_type TEXT, reminder_time TIME,
+           is_active BOOLEAN DEFAULT true, quiet_start TIME, quiet_end TIME)
+```
+
+### 3.3 辅助表
+
+```sql
+-- 设置会话 (多步骤引导, 1小时过期)
+profile_setup_sessions (id UUID PK, user_id FK UNIQUE, current_step TEXT,
+                        collected_data JSONB DEFAULT '{}', expires_at TIMESTAMPTZ)
+
+-- 用户偏好
+user_preferences (id UUID PK, user_id FK UNIQUE, dietary_type TEXT,
+                  allergies TEXT[], favorite_foods TEXT[], disliked_foods TEXT[])
+
+-- 饮食模式 (学习用户习惯)
+dietary_patterns (id UUID PK, user_id FK UNIQUE,
+                  typical_breakfast_time TIME, typical_lunch_time TIME,
+                  typical_dinner_time TIME, avg_daily_calories NUMERIC)
+
+-- API成本追踪
+api_usage (id UUID PK, user_id, model TEXT, tokens_used INT,
+           estimated_cost NUMERIC, endpoint TEXT, created_at)
+
+-- Stripe事件幂等
+stripe_events (id UUID PK, event_id TEXT UNIQUE, event_type TEXT, processed_at)
+
+-- 用户反馈
+user_feedback (id UUID PK, user_id FK, food_record_id FK,
+               feedback_type TEXT, feedback_data JSONB)
+```
+
+### 3.4 关键数据库函数
+
+```sql
+-- 原子配额检查（FOR UPDATE行锁防并发）
+check_and_increment_quota(p_user_id UUID, p_date DATE, p_limit INT)
+  → RETURNS {allowed: boolean, used: int, limit: int}
+
+-- 更新打卡连续天数
+update_user_streak(p_user_id UUID)
+  → RETURNS {current_streak, longest_streak, is_new_record}
+```
+
+### 3.5 迁移文件执行顺序
+
+```
+supabase/migrations/
+├── 001_initial_schema.sql           — 核心表 + 索引 + 触发器
+├── 002_enable_rls.sql               — RLS策略
+├── 003_login_logs.sql               — 登录日志
+├── 004_feedback_system.sql          — 反馈系统
+├── 005_gamification_system.sql      — 游戏化基础
+├── 006_context_understanding.sql    — user_preferences + dietary_patterns
+├── 007_cost_monitoring.sql          — api_usage + cost_metrics + cost_alerts
+├── 008_fix_quota_race_condition.sql — check_and_increment_quota 原子函数
+├── 009_stripe_events.sql            — Stripe幂等
+├── 010_profile_setup_sessions.sql   — 多步骤设置会话
+└── 011_phase3_FINAL.sql             — Phase3全部（预算/成就/提醒/卡片/功能发现）
+```
+
+⚠️ 部署后还需手动执行:
+```sql
+ALTER TABLE food_records ALTER COLUMN image_url DROP NOT NULL;
+ALTER TABLE food_records ALTER COLUMN image_hash DROP NOT NULL;
+```
+
+---
+
+## 四、API 参考
+
+### 4.1 WhatsApp Webhook
+
+```
+GET  /api/webhook?hub.mode=subscribe&hub.verify_token=xxx&hub.challenge=xxx
+  → Webhook验证，返回challenge
+
+POST /api/webhook
+  → 接收WhatsApp消息，签名验证后处理
+  Headers: X-Hub-Signature-256
+  Body: WhatsApp Cloud API payload
+```
+
+### 4.2 Stripe API
+
+```
+GET  /api/stripe/products
+  → 返回订阅产品列表和价格
+
+POST /api/stripe/create-subscription
+  Body: { userId, email, priceId, tier }
+  → 创建Stripe订阅，返回clientSecret
+
+POST /api/stripe/cancel-subscription
+  Body: { userId }
+  → 取消订阅（期末生效）
+
+POST /api/stripe/billing-portal
+  Body: { userId }
+  → 返回Stripe Billing Portal URL
+
+POST /api/stripe/webhook
+  Headers: stripe-signature
+  → 处理Stripe事件（subscription.created/updated/deleted, payment成功/失败）
+```
+
+### 4.3 Dashboard API
+
+```
+GET /api/dashboard/stats
+  Headers: Authorization: Bearer <session_token>
+  → 返回今日营养、目标、本周统计、订阅状态、配额
+
+GET /api/dashboard/history
+  Headers: Authorization: Bearer <session_token>
+  → 返回饮食记录历史
+
+GET /api/dashboard/export
+  Headers: Authorization: Bearer <session_token>
+  → 导出用户数据
+```
+
+### 4.4 Cron
+
+```
+GET /api/cron/meal-reminder
+  Headers: Authorization: Bearer <CRON_SECRET>
+  → 检查所有用户，发送用餐提醒
+  → Vercel Cron 定时触发
+```
+
+---
+
+## 五、环境变量
+
+```env
+# === AI ===
+OPENAI_API_KEY=               # GPT-4o-mini (Vision + 文字识别 + Whisper)
+GOOGLE_AI_API_KEY=            # Gemini 2.0 Flash (意图识别, 更便宜)
+
+# === WhatsApp Cloud API ===
+WHATSAPP_TOKEN=               # 永久Token或临时Token
+WHATSAPP_PHONE_NUMBER_ID=     # 电话号码ID
+WHATSAPP_VERIFY_TOKEN=        # Webhook验证Token (自定义字符串)
+WHATSAPP_APP_SECRET=          # App Secret (用于签名验证)
+
+# === Supabase ===
+NEXT_PUBLIC_SUPABASE_URL=     # Project URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY= # Anon Key (前端)
+SUPABASE_SERVICE_KEY=         # Service Role Key (后端, 绕过RLS)
+
+# === Stripe ===
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
+STRIPE_PREMIUM_MONTHLY_PRICE_ID=
+STRIPE_PREMIUM_YEARLY_PRICE_ID=
+STRIPE_PRO_MONTHLY_PRICE_ID=
+STRIPE_PRO_YEARLY_PRICE_ID=
+
+# === Redis ===
+UPSTASH_REDIS_URL=
+UPSTASH_REDIS_TOKEN=
+
+# === App ===
+NEXT_PUBLIC_URL=              # 部署URL
+NODE_ENV=                     # development / production / test
+LOG_LEVEL=                    # debug / info / warn / error
+CRON_SECRET=                  # Cron Job 认证密钥
+```
+
+⚠️ 注意: `gamification-manager.ts` 使用 `SUPABASE_SERVICE_ROLE_KEY` 而非 `SUPABASE_SERVICE_KEY`，需统一。
+
+---
+
+## 六、关键设计决策
+
+### 6.1 AI模型选择
+
+| 用途 | 模型 | 原因 |
+|------|------|------|
+| 食物识别(图片) | GPT-4o-mini Vision | 视觉理解能力强，性价比高 |
+| 食物识别(文字) | GPT-4o-mini | 同上 |
+| 语音转文字 | OpenAI Whisper | 多语言支持好 |
+| 意图识别 | Gemini 2.0 Flash → GPT-4o-mini fallback | Gemini更便宜更快，OpenAI更稳定 |
+
+### 6.2 缓存策略
+
+- 图片通过 sharp 处理后计算 hash
+- 相同 hash 的图片直接返回 Redis 缓存结果
+- 避免重复调用 Vision API（最贵的调用）
+
+### 6.3 配额并发控制
+
+```sql
+-- 使用 FOR UPDATE 行锁
+SELECT * FROM usage_quotas WHERE user_id = $1 AND date = $2 FOR UPDATE;
+-- 检查 + 递增在同一事务内完成
+```
+
+### 6.4 响应格式
+
+默认简洁（一行式）:
+```
+🟢 *鸡饭*
+520 kcal · 75/100
+🔥 3 day streak
+💰 980 kcal left today
+
+💡 Try less rice next time
+```
+
+点击"详情"后展开完整营养分解。
+
+### 6.5 WhatsApp 按钮限制
+
+WhatsApp Interactive Buttons 最多3个按钮，每个标题最多20字符。当前使用:
+- `detail_{recordId}` → "📊 Details"
+- `modify_{recordId}` → "✏️ Modify"
+- `ignore_{recordId}` → "❌ Ignore"
+
+---
+
+## 七、已知问题
+
+1. **配额检查临时禁用** — `ImageHandler` 中 quota 检查被注释掉，测试完需恢复
+2. **debug-logs 路由** — 生产环境应移除或加认证
+3. **环境变量不一致** — `SUPABASE_SERVICE_ROLE_KEY` vs `SUPABASE_SERVICE_KEY`，gamification-manager 用了前者
+4. **meal_context 列冲突** — 001迁移定义 VARCHAR CHECK，011迁移又添加 JSONB 类型
+5. **achievements 表重复定义** — 001 和 011 迁移结构不同（001有UNIQUE，011有tier）
+6. **007迁移 SQL 语法** — 部分函数用 `$` 而非 `$$` 作分隔符
+7. **Stripe 价格ID** — 使用占位符字符串，需替换为真实 Stripe Price ID

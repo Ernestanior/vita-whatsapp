@@ -15,36 +15,46 @@ export enum Intent {
   HELP = 'HELP',
   START = 'START',
   SETTINGS = 'SETTINGS',
+  FOOD_LOG = 'FOOD_LOG',
   UNKNOWN = 'UNKNOWN',
 }
 
 const SYSTEM_PROMPT = `You are an intent classifier for a nutrition tracking WhatsApp bot.
 
 Available commands:
+- FOOD_LOG: User is TELLING you what they ate/drank (recording a meal). They describe specific food items they consumed.
 - STATS: User wants to VIEW statistics, data analysis, summaries, reports about their nutrition
-- HISTORY: User wants to VIEW their meal history, past records, what they ate recently
+- HISTORY: User wants to VIEW their meal history list, past records overview
 - PROFILE: User wants to VIEW their personal profile (NOT update it)
 - HELP: User needs help, instructions, doesn't know how to use the bot
 - START: User wants to start over, begin, reset
 - SETTINGS: User wants to change settings, preferences, language
-- UNKNOWN: General conversation, profile updates, or anything else
+- UNKNOWN: General conversation, profile updates, meal suggestions, or anything else
 
-CRITICAL: If user is PROVIDING information (height, weight, age), return UNKNOWN, not PROFILE.
+CRITICAL RULES:
+1. If user DESCRIBES food they ate (e.g. "吃了鸡饭", "I had pasta", "午饭吃了皮蛋粥"), return FOOD_LOG, NOT HISTORY.
+2. HISTORY is ONLY for when user wants to VIEW/LIST their past records (e.g. "看看历史", "show my meals").
+3. If user is PROVIDING personal info (height, weight, age), return UNKNOWN, not PROFILE.
+4. If user is asking what to eat or for meal suggestions, return UNKNOWN.
 
-Respond with ONLY the command name (e.g., "STATS", "HISTORY", etc.). No explanation.
+Respond with ONLY the command name. No explanation.
 
 Examples:
+User: "午饭吃了鸡饭" → FOOD_LOG
+User: "晚上吃了皮蛋粥" → FOOD_LOG
+User: "I had chicken rice for lunch" → FOOD_LOG
+User: "just ate a sandwich" → FOOD_LOG
+User: "早餐喝了咖啡吃了面包" → FOOD_LOG
+User: "吃了两个苹果" → FOOD_LOG
 User: "我想看一下数据分析" → STATS
 User: "我最近吃了什么" → HISTORY
+User: "show me my meals" → HISTORY
+User: "查看历史记录" → HISTORY
 User: "我的个人信息" → PROFILE
-User: "show me my profile" → PROFILE
-User: "I'm now 79kg" → UNKNOWN (providing info, not viewing)
-User: "My height is 165cm" → UNKNOWN (providing info, not viewing)
-User: "I'm 25 years old, 170cm, 65kg" → UNKNOWN (providing info)
+User: "I'm now 79kg" → UNKNOWN
+User: "午饭吃什么好" → UNKNOWN (asking for suggestion, not logging)
 User: "怎么用这个" → HELP
-User: "你好" → UNKNOWN
-User: "show me my statistics" → STATS
-User: "what did I eat yesterday" → HISTORY`;
+User: "你好" → UNKNOWN`;
 
 export class IntentDetector {
   /**
@@ -168,6 +178,7 @@ export class IntentDetector {
       'HELP': Intent.HELP,
       'START': Intent.START,
       'SETTINGS': Intent.SETTINGS,
+      'FOOD_LOG': Intent.FOOD_LOG,
       'UNKNOWN': Intent.UNKNOWN,
     };
 
