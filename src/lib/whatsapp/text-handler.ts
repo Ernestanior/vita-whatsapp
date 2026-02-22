@@ -2,137 +2,95 @@ import { logger } from '@/utils/logger';
 import { whatsappClient } from './client';
 import { profileManager } from '@/lib/profile';
 import type { Message, MessageContext } from '@/types/whatsapp';
+import { UserIntent, unifiedIntentDetector } from '@/lib/ai/unified-intent-detector';
+import type { IntentResult } from '@/lib/ai/unified-intent-detector';
+
+// Re-export for backward compatibility
+export { UserIntent as Command } from '@/lib/ai/unified-intent-detector';
 
 /**
- * Command types supported by the bot
- */
-export enum Command {
-  START = 'start',
-  PROFILE = 'profile',
-  HELP = 'help',
-  STATS = 'stats',
-  HISTORY = 'history',
-  SETTINGS = 'settings',
-  // Phase 3 commands
-  STREAK = 'streak',
-  BUDGET = 'budget',
-  CARD = 'card',
-  REMINDERS = 'reminders',
-  COMPARE = 'compare',
-  PROGRESS = 'progress',
-  PREFERENCES = 'preferences',
-  UNKNOWN = 'unknown',
-}
-
-/**
- * TextHandler - Handles text messages and commands
- * 
- * Responsibilities:
- * - Recognize commands (/start, /profile, /help, /stats)
- * - Handle natural language for profile updates
- * - Support both English and Chinese commands
+ * TextHandler - Handles text messages
+ *
+ * Flow: Exact match → Setup flow → Unified AI intent → Route
+ * Single AI call replaces the old 3-layer detection chain.
  */
 export class TextHandler {
+  // ─── Exact command map (fast path, no AI) ──────────────
+  private static readonly COMMAND_MAP: Record<string, UserIntent> = {
+    '/start': UserIntent.START, 'start': UserIntent.START, '开始': UserIntent.START, '開始': UserIntent.START,
+    '/profile': UserIntent.PROFILE, 'profile': UserIntent.PROFILE, '/画像': UserIntent.PROFILE, '/畫像': UserIntent.PROFILE,
+    '画像': UserIntent.PROFILE, '畫像': UserIntent.PROFILE, '个人资料': UserIntent.PROFILE, '個人資料': UserIntent.PROFILE,
+    '/help': UserIntent.HELP, 'help': UserIntent.HELP, '/帮助': UserIntent.HELP, '/幫助': UserIntent.HELP,
+    '帮助': UserIntent.HELP, '幫助': UserIntent.HELP,
+    '/stats': UserIntent.STATS, 'stats': UserIntent.STATS, '/统计': UserIntent.STATS, '/統計': UserIntent.STATS,
+    '统计': UserIntent.STATS, '統計': UserIntent.STATS,
+    '/history': UserIntent.HISTORY, 'history': UserIntent.HISTORY, '/历史': UserIntent.HISTORY, '/歷史': UserIntent.HISTORY,
+    '历史': UserIntent.HISTORY, '歷史': UserIntent.HISTORY,
+    '/settings': UserIntent.SETTINGS, 'settings': UserIntent.SETTINGS, '/设置': UserIntent.SETTINGS, '/設置': UserIntent.SETTINGS,
+    '设置': UserIntent.SETTINGS, '設置': UserIntent.SETTINGS,
+    '/streak': UserIntent.STREAK, 'streak': UserIntent.STREAK, '/连续': UserIntent.STREAK, '/連續': UserIntent.STREAK,
+    '连续': UserIntent.STREAK, '連續': UserIntent.STREAK, '/打卡': UserIntent.STREAK, '打卡': UserIntent.STREAK,
+    '/budget': UserIntent.BUDGET, 'budget': UserIntent.BUDGET, '/预算': UserIntent.BUDGET, '/預算': UserIntent.BUDGET,
+    '预算': UserIntent.BUDGET, '預算': UserIntent.BUDGET,
+    '/card': UserIntent.CARD, 'card': UserIntent.CARD, '/卡片': UserIntent.CARD, '卡片': UserIntent.CARD,
+    '/reminders': UserIntent.REMINDERS, 'reminders': UserIntent.REMINDERS, '/提醒': UserIntent.REMINDERS, '提醒': UserIntent.REMINDERS,
+    '/compare': UserIntent.COMPARE, 'compare': UserIntent.COMPARE, '/对比': UserIntent.COMPARE, '/對比': UserIntent.COMPARE,
+    '对比': UserIntent.COMPARE, '對比': UserIntent.COMPARE,
+    '/progress': UserIntent.PROGRESS, 'progress': UserIntent.PROGRESS, '/进度': UserIntent.PROGRESS, '/進度': UserIntent.PROGRESS,
+    '进度': UserIntent.PROGRESS, '進度': UserIntent.PROGRESS,
+    '/preferences': UserIntent.PREFERENCES, 'preferences': UserIntent.PREFERENCES, '/偏好': UserIntent.PREFERENCES, '偏好': UserIntent.PREFERENCES,
+  };
+
   /**
    * Handle incoming text message
+   * Flow: exact match → setup flow → unified AI intent → route
    */
   async handle(message: Message, context: MessageContext): Promise<void> {
     const text = message.text?.body;
-
-    if (!text) {
-      logger.warn({
-        type: 'empty_text_message',
-        messageId: message.id,
-      });
-      return;
-    }
+    if (!text) return;
 
     logger.info({
       type: 'text_message_processing',
       messageId: message.id,
       textLength: text.length,
-      language: context.language,
-      text: text.substring(0, 50), // Log first 50 chars
+      text: text.substring(0, 50),
     });
 
     try {
-      logger.info({
-        type: 'recognizing_command',
-        messageId: message.id,
-      });
+      // ── Step 1: Exact match (free, instant) ──────────────
+      const normalized = text.trim().toLowerCase();
+      const firstWord = normalized.split(/\s+/)[0];
+      const exactIntent = TextHandler.COMMAND_MAP[normalized] || TextHandler.COMMAND_MAP[firstWord];
 
-      // Check if it's a command first (commands should work even during setup)
-      const command = await this.recognizeCommand(text);
-      
-      logger.info({
-        type: 'command_recognized_result',
-        messageId: message.id,
-        command,
-      });
-
-      // Allow certain commands to cancel setup flow
-      if (command === Command.HELP || command === Command.START) {
-        logger.info({
-          type: 'checking_setup_flow',
-          messageId: message.id,
-          userId: context.userId,
-        });
-
-        // Cancel any ongoing setup
-        if (await profileManager.isInSetupFlow(context.userId)) {
-          logger.info({
-            type: 'profile_setup_cancelled_by_command',
-            userId: context.userId,
-            command,
-          });
-          // Clear the setup session
-          await profileManager.cancelSetup(context.userId);
+      if (exactIntent) {
+        // HELP / START can cancel setup flow
+        if (exactIntent === UserIntent.HELP || exactIntent === UserIntent.START) {
+          if (await profileManager.isInSetupFlow(context.userId)) {
+            await profileManager.cancelSetup(context.userId);
+          }
         }
-
-        logger.info({
-          type: 'handling_command',
-          messageId: message.id,
-          command,
-        });
-
-        await this.handleCommand(command, message, context, text);
+        await this.routeIntent({ intent: exactIntent, confidence: 1 }, text, message, context);
         return;
       }
-      
-      // Check if user is in profile setup flow
+
+      // ── Step 2: Setup flow intercept ─────────────────────
       if (await profileManager.isInSetupFlow(context.userId)) {
-        const setupComplete = await profileManager.processSetupInput(
-          context.userId,
-          text,
-          context.language
-        );
-
-        if (setupComplete) {
-          // Setup complete, continue with normal message handling
-          logger.info({
-            type: 'profile_setup_completed_via_text',
-            userId: context.userId,
-          });
-        }
-        return; // Don't process further if in setup flow
+        await profileManager.processSetupInput(context.userId, text, context.language);
+        return;
       }
 
-      // Handle other commands
-      if (command !== Command.UNKNOWN) {
-        await this.handleCommand(command, message, context, text);
-      } else {
-        // Try to parse as natural language profile update
-        const wasProfileUpdate = await profileManager.parseNaturalLanguageUpdate(
-          context.userId,
-          text,
-          context.language
-        );
+      // ── Step 3: Unified AI intent detection (single call) ─
+      const result = await unifiedIntentDetector.detect(text);
 
-        if (!wasProfileUpdate) {
-          // Handle as general natural language
-          await this.handleNaturalLanguage(text, message, context);
-        }
-      }
+      logger.info({
+        type: 'unified_intent_result',
+        messageId: message.id,
+        intent: result.intent,
+        confidence: result.confidence,
+      });
+
+      await this.routeIntent(result, text, message, context);
+
     } catch (error) {
       logger.error({
         type: 'text_handling_error',
@@ -140,272 +98,113 @@ export class TextHandler {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
       });
-
-      // Send error message to user
       await this.sendErrorMessage(message.from, context.language);
     }
   }
 
-  /**
-   * Recognize command from text
-   * Supports both English and Chinese commands
-   * Uses AI for natural language intent recognition
-   */
-  private async recognizeCommand(text: string): Promise<Command> {
-    const normalizedText = text.trim().toLowerCase();
-    
-    // Extract first word for command matching (to support commands with arguments)
-    const firstWord = normalizedText.split(/\s+/)[0];
-
-    // Exact command mappings (English and Chinese) - fast path
-    const commandMap: Record<string, Command> = {
-      // Start command
-      '/start': Command.START,
-      'start': Command.START,
-      '开始': Command.START,
-      '開始': Command.START,
-      
-      // Profile command
-      '/profile': Command.PROFILE,
-      'profile': Command.PROFILE,
-      '/画像': Command.PROFILE,
-      '/畫像': Command.PROFILE,
-      '画像': Command.PROFILE,
-      '畫像': Command.PROFILE,
-      '个人资料': Command.PROFILE,
-      '個人資料': Command.PROFILE,
-      
-      // Help command
-      '/help': Command.HELP,
-      'help': Command.HELP,
-      '/帮助': Command.HELP,
-      '/幫助': Command.HELP,
-      '帮助': Command.HELP,
-      '幫助': Command.HELP,
-      
-      // Stats command
-      '/stats': Command.STATS,
-      'stats': Command.STATS,
-      '/统计': Command.STATS,
-      '/統計': Command.STATS,
-      '统计': Command.STATS,
-      '統計': Command.STATS,
-      
-      // History command
-      '/history': Command.HISTORY,
-      'history': Command.HISTORY,
-      '/历史': Command.HISTORY,
-      '/歷史': Command.HISTORY,
-      '历史': Command.HISTORY,
-      '歷史': Command.HISTORY,
-      
-      // Settings command
-      '/settings': Command.SETTINGS,
-      'settings': Command.SETTINGS,
-      '/设置': Command.SETTINGS,
-      '/設置': Command.SETTINGS,
-      '设置': Command.SETTINGS,
-      '設置': Command.SETTINGS,
-      
-      // Phase 3: Streak command
-      '/streak': Command.STREAK,
-      'streak': Command.STREAK,
-      '/连续': Command.STREAK,
-      '/連續': Command.STREAK,
-      '连续': Command.STREAK,
-      '連續': Command.STREAK,
-      '/打卡': Command.STREAK,
-      '打卡': Command.STREAK,
-      
-      // Phase 3: Budget command
-      '/budget': Command.BUDGET,
-      'budget': Command.BUDGET,
-      '/预算': Command.BUDGET,
-      '/預算': Command.BUDGET,
-      '预算': Command.BUDGET,
-      '預算': Command.BUDGET,
-      
-      // Phase 3: Card command
-      '/card': Command.CARD,
-      'card': Command.CARD,
-      '/卡片': Command.CARD,
-      '卡片': Command.CARD,
-      
-      // Phase 3: Reminders command
-      '/reminders': Command.REMINDERS,
-      'reminders': Command.REMINDERS,
-      '/提醒': Command.REMINDERS,
-      '提醒': Command.REMINDERS,
-      
-      // Phase 3: Compare command
-      '/compare': Command.COMPARE,
-      'compare': Command.COMPARE,
-      '/对比': Command.COMPARE,
-      '/對比': Command.COMPARE,
-      '对比': Command.COMPARE,
-      '對比': Command.COMPARE,
-      
-      // Phase 3: Progress command
-      '/progress': Command.PROGRESS,
-      'progress': Command.PROGRESS,
-      '/进度': Command.PROGRESS,
-      '/進度': Command.PROGRESS,
-      '进度': Command.PROGRESS,
-      '進度': Command.PROGRESS,
-      
-      // Phase 3: Preferences command
-      '/preferences': Command.PREFERENCES,
-      'preferences': Command.PREFERENCES,
-      '/偏好': Command.PREFERENCES,
-      '偏好': Command.PREFERENCES,
-    };
-
-    // Check exact match on full text first
-    const exactMatch = commandMap[normalizedText];
-    if (exactMatch) {
-      return exactMatch;
-    }
-    
-    // Check first word match (for commands with arguments like "budget set 1800")
-    const firstWordMatch = commandMap[firstWord];
-    if (firstWordMatch) {
-      return firstWordMatch;
-    }
-
-    // CRITICAL FIX: Check for Phase 3 commands with partial matching
-    // This ensures commands work even if AI fails or doesn't recognize them
-    const phase3Keywords = {
-      streak: ['streak', '连续', '連續', '打卡'],
-      budget: ['budget', '预算', '預算'],
-      card: ['card', '卡片'],
-      reminders: ['reminders', 'reminder', '提醒'],
-      compare: ['compare', '对比', '對比'],
-      progress: ['progress', '进度', '進度'],
-      preferences: ['preferences', 'preference', '偏好', 'settings', '设置', '設置'],
-    };
-
-    for (const [command, keywords] of Object.entries(phase3Keywords)) {
-      for (const keyword of keywords) {
-        if (normalizedText.includes(keyword)) {
-          logger.info({
-            type: 'phase3_command_matched_by_keyword',
-            keyword,
-            command,
-            text: text.substring(0, 50),
-          });
-          
-          // Map to Command enum
-          const commandMapping: Record<string, Command> = {
-            'streak': Command.STREAK,
-            'budget': Command.BUDGET,
-            'card': Command.CARD,
-            'reminders': Command.REMINDERS,
-            'compare': Command.COMPARE,
-            'progress': Command.PROGRESS,
-            'preferences': Command.PREFERENCES,
-          };
-          
-          return commandMapping[command] || Command.UNKNOWN;
-        }
-      }
-    }
-
-    // Use AI for natural language intent recognition (only for non-Phase3 commands)
-    try {
-      const intent = await this.detectIntentWithAI(text);
-      return intent;
-    } catch (error) {
-      logger.error({
-        type: 'intent_detection_error',
-        text: text.substring(0, 50),
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      // Fallback to UNKNOWN if AI fails
-      return Command.UNKNOWN;
-    }
-  }
-
-  /**
-   * Use AI to detect user intent from natural language
-   * Uses Gemini 2.0 Flash (primary) with GPT-4o-mini fallback
-   */
-  private async detectIntentWithAI(text: string): Promise<Command> {
-    const { intentDetector, Intent } = await import('@/lib/ai/intent-detector');
-
-    const intent = await intentDetector.detect(text);
-
-    // FOOD_LOG maps to UNKNOWN so it flows to handleNaturalLanguage → tryTextFoodLog
-    const intentMap: Record<string, Command> = {
-      [Intent.STATS]: Command.STATS,
-      [Intent.HISTORY]: Command.HISTORY,
-      [Intent.PROFILE]: Command.PROFILE,
-      [Intent.HELP]: Command.HELP,
-      [Intent.START]: Command.START,
-      [Intent.SETTINGS]: Command.SETTINGS,
-      [Intent.FOOD_LOG]: Command.UNKNOWN,
-      [Intent.UNKNOWN]: Command.UNKNOWN,
-    };
-
-    return intentMap[intent] || Command.UNKNOWN;
-  }
-
-  /**
-   * Handle recognized command
-   */
-  private async handleCommand(
-    command: Command,
+  // ─── Intent Router ─────────────────────────────────────
+  private async routeIntent(
+    result: IntentResult,
+    text: string,
     message: Message,
-    context: MessageContext,
-    originalText: string
+    context: MessageContext
   ): Promise<void> {
-    logger.info({
-      type: 'command_recognized',
-      command,
-      messageId: message.id,
-    });
+    const { intent, extractedData } = result;
 
-    switch (command) {
-      case Command.START:
+    switch (intent) {
+      case UserIntent.START:
+      case UserIntent.GREETING:
         await this.handleStartCommand(message.from, context);
         break;
-
-      case Command.PROFILE:
-        await this.handleProfileCommand(message.from, context);
-        break;
-
-      case Command.HELP:
+      case UserIntent.HELP:
         await this.handleHelpCommand(message.from, context);
         break;
-
-      case Command.STATS:
+      case UserIntent.PROFILE:
+        await this.handleProfileCommand(message.from, context);
+        break;
+      case UserIntent.STATS:
         await this.handleStatsCommand(message.from, context);
         break;
-
-      case Command.HISTORY:
+      case UserIntent.HISTORY:
         await this.handleHistoryCommand(message.from, context);
         break;
-
-      case Command.SETTINGS:
+      case UserIntent.SETTINGS:
         await this.handleSettingsCommand(message.from, context);
         break;
 
       // Phase 3 commands
-      case Command.STREAK:
-      case Command.BUDGET:
-      case Command.CARD:
-      case Command.REMINDERS:
-      case Command.COMPARE:
-      case Command.PROGRESS:
-      case Command.PREFERENCES:
-        await this.handlePhase3Command(command, message.from, context, originalText);
+      case UserIntent.STREAK:
+      case UserIntent.BUDGET:
+      case UserIntent.CARD:
+      case UserIntent.REMINDERS:
+      case UserIntent.COMPARE:
+      case UserIntent.PROGRESS:
+      case UserIntent.PREFERENCES:
+        await this.handlePhase3Command(intent, message.from, context, text);
         break;
 
+      // AI-detected intents
+      case UserIntent.FOOD_LOG:
+        await this.handleFoodLog(extractedData?.foodDescription || text, message, context);
+        break;
+      case UserIntent.MEAL_ADVICE:
+        await this.handleMealAdvice(text, message, context);
+        break;
+      case UserIntent.PROFILE_UPDATE:
+        await this.handleProfileUpdate(extractedData, text, message, context);
+        break;
+      case UserIntent.QUICK_SETUP:
+        if (extractedData?.quickSetupAge && extractedData?.quickSetupHeight && extractedData?.quickSetupWeight) {
+          await this.handleQuickSetup(message.from, context, {
+            age: extractedData.quickSetupAge,
+            height: extractedData.quickSetupHeight,
+            weight: extractedData.quickSetupWeight,
+          });
+        } else {
+          // Fallback: try regex
+          const match = text.trim().match(/^(\d{1,3})\s+(\d{2,3})\s+(\d{2,3})$/);
+          if (match) {
+            await this.handleQuickSetup(message.from, context, {
+              age: parseInt(match[1]), height: parseInt(match[2]), weight: parseInt(match[3]),
+            });
+          } else {
+            await this.handleGeneralChat(text, message, context);
+          }
+        }
+        break;
+
+      case UserIntent.GENERAL:
       default:
-        logger.warn({
-          type: 'unhandled_command',
-          command,
-          messageId: message.id,
-        });
+        await this.handleGeneralChat(text, message, context);
+        break;
+    }
+  }
+
+  // ─── Phase 3 command routing ────────────────────────
+  private async handlePhase3Command(
+    intent: UserIntent,
+    userId: string,
+    context: MessageContext,
+    originalText: string
+  ): Promise<void> {
+    const { createPhase3CommandHandler } = await import('@/lib/phase3/commands/command-handler');
+    const handler = await createPhase3CommandHandler();
+
+    const intentToPhase3: Record<string, string> = {
+      [UserIntent.STREAK]: 'streak',
+      [UserIntent.BUDGET]: 'budget',
+      [UserIntent.CARD]: 'card',
+      [UserIntent.REMINDERS]: 'reminders',
+      [UserIntent.COMPARE]: 'compare',
+      [UserIntent.PROGRESS]: 'progress',
+      [UserIntent.PREFERENCES]: 'preferences',
+    };
+
+    const phase3Command = intentToPhase3[intent] as any;
+    if (phase3Command) {
+      const parts = originalText.trim().split(/\s+/);
+      const args = parts.slice(1);
+      await handler.handleCommand(phase3Command, userId, context.language, args);
     }
   }
 
@@ -910,85 +709,6 @@ Use the buttons below!`,
   }
 
   /**
-   * Handle /stats command - Show nutrition statistics
-   */
-  private async handleStatsCommandOld(
-    userId: string,
-    context: MessageContext
-  ): Promise<void> {
-    // TODO: Fetch user statistics from database
-    const messages = {
-      'en': `📈 Your Statistics
-
-This feature is coming soon! You'll be able to see:
-• Total meals tracked
-• Average daily calories
-• Health score trends
-• Nutrition breakdown
-
-Start tracking by sending photos of your meals!`,
-      
-      'zh-CN': `📈 您的统计数据
-
-此功能即将上线！您将能够查看：
-• 记录的总餐数
-• 平均每日卡路里
-• 健康评分趋势
-• 营养成分分布
-
-开始发送食物照片来记录吧！`,
-      
-      'zh-TW': `📈 您的統計數據
-
-此功能即將上線！您將能夠查看：
-• 記錄的總餐數
-• 平均每日卡路里
-• 健康評分趨勢
-• 營養成分分佈
-
-開始發送食物照片來記錄吧！`,
-    };
-
-    await whatsappClient.sendTextMessage(
-      userId,
-      messages[context.language]
-    );
-  }
-
-  /**
-   * Handle Phase 3 commands
-   */
-  private async handlePhase3Command(
-    command: Command,
-    userId: string,
-    context: MessageContext,
-    originalText: string
-  ): Promise<void> {
-    const { createPhase3CommandHandler } = await import('@/lib/phase3/commands/command-handler');
-    const handler = await createPhase3CommandHandler();
-    
-    // Map Command enum to Phase3Command type
-    const commandMap: Record<string, string> = {
-      [Command.STREAK]: 'streak',
-      [Command.BUDGET]: 'budget',
-      [Command.CARD]: 'card',
-      [Command.REMINDERS]: 'reminders',
-      [Command.COMPARE]: 'compare',
-      [Command.PROGRESS]: 'progress',
-      [Command.PREFERENCES]: 'preferences',
-    };
-    
-    const phase3Command = commandMap[command] as any;
-    if (phase3Command) {
-      // Parse arguments from original text
-      const parts = originalText.trim().split(/\s+/);
-      const args = parts.slice(1); // Skip the command itself
-      
-      await handler.handleCommand(phase3Command, userId, context.language, args);
-    }
-  }
-
-  /**
    * Handle /settings command - Adjust user preferences
    */
   private async handleSettingsCommand(
@@ -1033,58 +753,53 @@ For now, I automatically detect your language from your messages.`,
     );
   }
 
-  /**
-   * Handle natural language input
-   * Used for profile updates and general conversation
-   */
-  private async handleNaturalLanguage(
+  // ─── AI-detected intent handlers ────────────────────
+
+  private async handleFoodLog(
+    foodDescription: string,
+    message: Message,
+    context: MessageContext
+  ): Promise<void> {
+    // Delegate to existing tryTextFoodLog logic
+    const logged = await this.tryTextFoodLog(foodDescription, message, context);
+    if (!logged) {
+      await this.handleGeneralChat(foodDescription, message, context);
+    }
+  }
+
+  private async handleMealAdvice(
     text: string,
     message: Message,
     context: MessageContext
   ): Promise<void> {
-    logger.info({
-      type: 'natural_language_processing',
-      messageId: message.id,
-      textLength: text.length,
-    });
-
-    // Check for greetings first
-    const normalizedText = text.trim().toLowerCase();
-    const greetings = [
-      'hi', 'hello', 'hey', 'hola', 'bonjour',
-      '你好', '您好', '嗨', '哈喽', '哈啰',
-      'start', 'begin', '开始', '開始'
-    ];
-    
-    if (greetings.some(greeting => normalizedText === greeting || normalizedText.includes(greeting))) {
-      // Treat as start command
-      await this.handleStartCommand(message.from, context);
-      return;
+    const advised = await this.tryMealAdvice(text, message, context);
+    if (!advised) {
+      await this.handleGeneralChat(text, message, context);
     }
+  }
 
-    // Try to parse as quick setup: "age height weight"
-    const quickSetupMatch = text.trim().match(/^(\d{1,3})\s+(\d{2,3})\s+(\d{2,3})$/);
-    if (quickSetupMatch) {
-      const [, age, height, weight] = quickSetupMatch;
-      await this.handleQuickSetup(message.from, context, {
-        age: parseInt(age),
-        height: parseInt(height),
-        weight: parseInt(weight),
-      });
-      return;
+  private async handleProfileUpdate(
+    extractedData: any,
+    text: string,
+    message: Message,
+    context: MessageContext
+  ): Promise<void> {
+    const wasUpdated = await profileManager.parseNaturalLanguageUpdate(
+      context.userId,
+      text,
+      context.language
+    );
+    if (!wasUpdated) {
+      await this.handleGeneralChat(text, message, context);
     }
+  }
 
-    // Check if user is describing food they ate — text-based food logging
-    const foodLogResult = await this.tryTextFoodLog(text, message, context);
-    if (foodLogResult) return;
-
-    // Check if user is asking for meal suggestions
-    const mealAdviceResult = await this.tryMealAdvice(text, message, context);
-    if (mealAdviceResult) return;
-
-    // Use AI to respond to general questions
+  private async handleGeneralChat(
+    text: string,
+    message: Message,
+    context: MessageContext
+  ): Promise<void> {
     try {
-      // Use intelligent conversation handler with full context
       const { intelligentConversation } = await import('@/lib/ai/intelligent-conversation');
       const aiResponse = await intelligentConversation.generateResponse(text, message.from, context);
       await whatsappClient.sendTextMessage(message.from, aiResponse);
@@ -1094,33 +809,15 @@ For now, I automatically detect your language from your messages.`,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
 
-      // Fallback to default response if AI fails
-      const messages = {
-        'en': `I'm not sure what you mean 🤔
-
-Try these:
-• Send 3 numbers for quick setup: \`25 170 65\`
-• Send a food photo for analysis 📸
-• Or tell me what you ate: "I had chicken rice"`,
-
-        'zh-CN': `我不太明白您的意思 🤔
-
-试试这些：
-• 发送 3 个数字快速设置：\`25 170 65\`
-• 发送食物照片进行分析 📸
-• 或者告诉我你吃了什么："午饭吃了鸡饭"`,
-
-        'zh-TW': `我不太明白您的意思 🤔
-
-試試這些：
-• 發送 3 個數字快速設置：\`25 170 65\`
-• 發送食物照片進行分析 📸
-• 或者告訴我你吃了什麼："午餐吃了雞飯"`,
+      const fallback: Record<string, string> = {
+        'en': `I'm not sure what you mean 🤔\n\nTry:\n• Send a food photo 📸\n• Tell me what you ate: "I had chicken rice"\n• Type /help for commands`,
+        'zh-CN': `我不太明白您的意思 🤔\n\n试试：\n• 发送食物照片 📸\n• 告诉我你吃了什么："午饭吃了鸡饭"\n• 输入 /help 查看命令`,
+        'zh-TW': `我不太明白您的意思 🤔\n\n試試：\n• 發送食物照片 📸\n• 告訴我你吃了什麼："午餐吃了雞飯"\n• 輸入 /help 查看命令`,
       };
 
       await whatsappClient.sendButtonMessage(
         message.from,
-        messages[context.language],
+        fallback[context.language] || fallback['en'],
         [
           { id: 'start', title: '🚀 Get Started' },
           { id: 'help', title: '❓ Help' },
@@ -1130,65 +827,8 @@ Try these:
   }
 
   /**
-   * Get AI response for general conversation
-   */
-  private async getAIResponse(text: string, context: MessageContext): Promise<string> {
-    const { OpenAI } = await import('openai');
-    const { env } = await import('@/config/env');
-    
-    const openai = new OpenAI({
-      apiKey: env.OPENAI_API_KEY,
-    });
-
-    const systemPrompt = context.language === 'zh-CN' || context.language === 'zh-TW'
-      ? `你是 Vita AI，一个友好的新加坡营养助手。你的职责是：
-1. 用新加坡华语风格回答问题（可以适当加入"lah"、"leh"等语气词）
-2. 回答关于营养、健康、饮食的问题
-3. 引导用户使用核心功能：发送食物照片进行分析
-4. 保持简短、友好、有帮助的回复（不超过100字）
-5. 如果用户问你是谁，介绍自己是新加坡营养助手，可以分析食物照片
-
-语气示例：
-- "可以 lah！"
-- "这个很 shiok 的！"
-- "不用担心 leh"
-- "试试看 lah"
-
-记住：你的核心功能是分析食物照片，所以要适时引导用户使用这个功能。`
-      : `You are Vita AI, a friendly Singaporean nutrition assistant. Your role is to:
-1. Answer in Singaporean English style (can use "lah", "leh", "lor" naturally)
-2. Answer questions about nutrition, health, and diet
-3. Guide users to use your core feature: sending food photos for analysis
-4. Keep responses short, friendly, and helpful (under 100 words)
-5. If asked who you are, introduce yourself as a Singaporean nutrition assistant that can analyze food photos
-
-Tone examples:
-- "Can lah!"
-- "Very shiok one!"
-- "Don't worry leh"
-- "Try it lah"
-
-Remember: Your core feature is analyzing food photos, so guide users to use this feature when appropriate.`;
-
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: text },
-      ],
-      max_tokens: 200,
-      temperature: 0.7,
-    });
-
-    return response.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
-  }
-
-  /**
    * Handle quick setup with 3 numbers
    */
-  /**
-     * Handle quick setup with 3 numbers
-     */
     private async handleQuickSetup(
       userId: string,
       context: MessageContext,
@@ -1456,19 +1096,6 @@ Remember: Your core feature is analyzing food photos, so guide users to use this
     message: Message,
     context: MessageContext
   ): Promise<boolean> {
-    const adviceKeywords = [
-      // English
-      'what should i eat', 'what to eat', 'suggest', 'recommend',
-      'what can i eat', 'any ideas for',
-      // Chinese
-      '吃什么', '吃啥', '推荐', '建议吃', '有什么好吃',
-      '吃什麼', '推薦', '建議吃',
-    ];
-
-    const lower = text.toLowerCase();
-    const isAdviceQuestion = adviceKeywords.some(kw => lower.includes(kw));
-    if (!isAdviceQuestion) return false;
-
     try {
       logger.info({
         type: 'meal_advice_detected',
@@ -1583,41 +1210,7 @@ Remember: Your core feature is analyzing food photos, so guide users to use this
     message: Message,
     context: MessageContext
   ): Promise<boolean> {
-    // Quick keyword check before calling AI — avoid unnecessary API calls
-    const foodKeywords = [
-      // English
-      'ate', 'eat', 'had', 'having', 'lunch', 'dinner', 'breakfast', 'snack',
-      'drank', 'drink', 'coffee', 'tea', 'rice', 'noodle', 'chicken', 'fish',
-      'prata', 'laksa', 'mee', 'nasi', 'satay', 'kaya', 'toast',
-      // Chinese
-      '吃了', '喝了', '早餐', '午餐', '晚餐', '午饭', '晚饭', '早饭',
-      '鸡饭', '面', '粥', '饭', '汤', '咖啡', '奶茶', '吃的',
-      '雞飯', '麵', '粥', '飯', '湯', '喝的',
-    ];
-
-    const lower = text.toLowerCase();
-    const hasFoodKeyword = foodKeywords.some(kw => lower.includes(kw));
-    if (!hasFoodKeyword) return false;
-
     try {
-      // Use AI to confirm this is a food log (not a question about food)
-      const { openai } = await import('@/lib/openai/client');
-      const check = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'You determine if a message is describing food the user ate/is eating. Reply ONLY "yes" or "no". Examples: "I had chicken rice" → yes. "What is chicken rice?" → no. "午饭吃了鸡饭" → yes. "鸡饭健康吗" → no.',
-          },
-          { role: 'user', content: text },
-        ],
-        max_tokens: 3,
-        temperature: 0,
-      });
-
-      const answer = check.choices[0]?.message?.content?.trim().toLowerCase();
-      if (answer !== 'yes') return false;
-
       logger.info({
         type: 'text_food_log_detected',
         userId: context.userId,
