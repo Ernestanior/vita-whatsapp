@@ -46,8 +46,8 @@ src/
 │   │   │   └── stats/route.ts            ← 反馈统计
 │   │   ├── health/route.ts               ← 健康检查
 │   │   ├── monitoring/metrics/route.ts   ← 监控指标
-│   │   └── debug-logs/route.ts           ← ⚠️ 生产环境需移除
 │   │   # ⚠️ 还有 29 个 test-* 路由待清理（如 test-image/, test-webhook-* 等）
+│   │   # ✅ debug-logs/route.ts 已移除
 │   └── ...
 ├── lib/
 │   ├── whatsapp/
@@ -492,7 +492,7 @@ WhatsApp Interactive Buttons 最多3个按钮，每个标题最多20字符。当
 ## 七、已知问题
 
 1. **配额检查临时禁用** — `ImageHandler` 中 quota 检查被注释掉，测试完需恢复
-2. **debug-logs 路由** — 生产环境应移除或加认证
+2. ~~**debug-logs 路由** — 生产环境应移除或加认证~~ ✅ 已移除
 3. **环境变量不一致** — `SUPABASE_SERVICE_ROLE_KEY` vs `SUPABASE_SERVICE_KEY`，需统一
 4. **meal_context 列冲突** — 001迁移定义 VARCHAR CHECK，011迁移又添加 JSONB 类型
 5. **achievements 表重复定义** — 001 和 011 迁移结构不同（001有UNIQUE，011有tier）

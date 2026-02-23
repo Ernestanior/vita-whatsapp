@@ -260,18 +260,6 @@ export class ImageHandler {
 
       const processingTime = Date.now() - startTime;
       
-      // Add to debug logs
-      const { addLog } = await import('@/app/api/debug-logs/route');
-      addLog({
-        type: 'image_handling_error',
-        userId: context.userId,
-        messageId: message.id,
-        processingTime,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-        errorType: error instanceof Error ? error.constructor.name : typeof error,
-      });
-      
       logger.error({
         type: 'image_handling_error',
         userId: context.userId,

@@ -26,12 +26,12 @@ describe('Security Audit: RLS Policies', () => {
 
     // 创建测试用户
     const { data: user1 } = await serviceClient.from('users').insert({
-      phone_number: '+6591234567',
+      phone_number: '+6583153431',
       language: 'en',
     }).select().single();
 
     const { data: user2 } = await serviceClient.from('users').insert({
-      phone_number: '+6591234568',
+      phone_number: '+6583153431',
       language: 'en',
     }).select().single();
 
@@ -230,7 +230,7 @@ describe('Security Audit: Log Sanitization', () => {
 
     // 记录包含手机号的日志
     logger.info('User login', {
-      phone: '+6591234567',
+      phone: '+6583153431',
       action: 'login',
     });
 
@@ -238,7 +238,7 @@ describe('Security Audit: Log Sanitization', () => {
 
     // 检查日志是否脱敏
     const logString = logOutput.join(' ');
-    expect(logString).not.toContain('+6591234567');
+    expect(logString).not.toContain('+6583153431');
     expect(logString).toContain('***4567'); // 应该只显示后4位
   });
 

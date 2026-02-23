@@ -37,20 +37,14 @@ export async function GET(request: NextRequest) {
     const result = webhookHandler.verifyWebhook(mode, token, challenge);
 
     if (result) {
-      logger.info({
-        type: 'webhook_verification_success',
-      });
+      logger.info({ type: 'webhook_verification_success' });
       return new NextResponse(result, {
         status: 200,
-        headers: {
-          'Content-Type': 'text/plain',
-        },
+        headers: { 'Content-Type': 'text/plain' },
       });
     }
 
-    logger.warn({
-      type: 'webhook_verification_failed',
-    });
+    logger.warn({ type: 'webhook_verification_failed' });
     return NextResponse.json(
       { error: 'Verification failed' },
       { status: 403 }
@@ -59,9 +53,7 @@ export async function GET(request: NextRequest) {
     logger.error({
       type: 'webhook_verification_error',
       error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
     });
-
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -72,51 +64,24 @@ export async function GET(request: NextRequest) {
 /**
  * POST handler for incoming webhook events
  * WhatsApp will send messages and status updates to this endpoint
- * Updated: Now includes signature verification for security
  */
 export async function POST(request: NextRequest) {
   try {
-    // Get raw body for signature verification
     const rawBody = await request.text();
     const signature = request.headers.get('x-hub-signature-256');
-
-    // Add to debug logs
-    const { addLog } = await import('@/app/api/debug-logs/route');
-    addLog({
-      type: 'webhook_received',
-      hasSignature: !!signature,
-      bodyLength: rawBody.length,
-      body: rawBody,
-      headers: Object.fromEntries(request.headers.entries()),
-    });
 
     logger.info({
       type: 'webhook_received',
       hasSignature: !!signature,
       bodyLength: rawBody.length,
-      headers: Object.fromEntries(request.headers.entries()),
-      body: rawBody.substring(0, 500), // Log first 500 chars
+      body: rawBody.substring(0, 500),
     });
 
     // Parse payload
     let payload: WebhookPayload;
     try {
       payload = JSON.parse(rawBody);
-      
-      // Add to debug logs
-      addLog({
-        type: 'webhook_payload_parsed',
-        object: payload.object,
-        entryCount: payload.entry?.length || 0,
-        payload: payload,
-      });
     } catch (error) {
-      addLog({
-        type: 'webhook_invalid_json',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        rawBody: rawBody.substring(0, 200),
-      });
-      
       logger.error({
         type: 'webhook_invalid_json',
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -132,54 +97,26 @@ export async function POST(request: NextRequest) {
       type: 'webhook_payload_parsed',
       object: payload.object,
       entryCount: payload.entry?.length || 0,
-      payload: JSON.stringify(payload).substring(0, 500),
     });
 
-    addLog({
-      type: 'about_to_call_handleWebhook',
-      object: payload.object,
-      entryCount: payload.entry?.length || 0,
-    });
-
-    // CORRECT ASYNC APPROACH for Vercel:
-    // Process webhook synchronously but with timeout protection
-    // This ensures the function doesn't terminate before processing completes
     try {
       await webhookHandler.handleWebhook(payload, rawBody, signature);
-      
-      addLog({
-        type: 'handleWebhook_completed_successfully',
-      });
-      
-      logger.info({
-        type: 'webhook_processing_completed',
-      });
+      logger.info({ type: 'webhook_processing_completed' });
     } catch (error) {
-      addLog({
-        type: 'handleWebhook_error',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      
       logger.error({
-        type: 'webhook_processing_error_caught',
+        type: 'webhook_processing_error',
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
       });
-      
-      // Error should have been sent to user by handler
     }
 
-    // Return 200 OK to acknowledge receipt
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     logger.error({
       type: 'webhook_post_error',
       error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
     });
 
-    // Check if it's a signature verification error
     if (error instanceof Error && error.message === 'Invalid webhook signature') {
       return NextResponse.json(
         { error: 'Invalid signature' },
@@ -187,8 +124,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Still return 200 for other errors to prevent WhatsApp from retrying
-    // Log the error for investigation
+    // Return 200 to prevent WhatsApp from retrying
     return NextResponse.json({ success: false }, { status: 200 });
   }
 }
