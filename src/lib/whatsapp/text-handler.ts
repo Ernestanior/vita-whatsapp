@@ -807,7 +807,19 @@ For now, I automatically detect your language from your messages.`,
       const p = macros.protein ?? 0;
       const c = macros.carbs ?? 0;
       const f = macros.fat ?? 0;
-      const cal = Math.round(p * 4 + c * 4 + f * 9);
+
+      // Sanity check: reject unreasonable values
+      const MAX_P = 500, MAX_C = 500, MAX_F = 300, MAX_CAL = 5000;
+      const rawCal = Math.round(p * 4 + c * 4 + f * 9);
+      if (p > MAX_P || c > MAX_C || f > MAX_F || rawCal > MAX_CAL) {
+        const msg = context.language === 'en'
+          ? `⚠️ Values seem too high (${rawCal} kcal). Limits: P≤${MAX_P}g, C≤${MAX_C}g, F≤${MAX_F}g, total ≤${MAX_CAL} kcal. Please double-check.`
+          : `⚠️ 数值偏高（${rawCal} kcal）。上限：P≤${MAX_P}g、C≤${MAX_C}g、F≤${MAX_F}g，总热量≤${MAX_CAL} kcal，请检查后重新输入。`;
+        await whatsappClient.sendTextMessage(message.from, msg);
+        return;
+      }
+
+      const cal = rawCal;
 
       // Build FoodRecognitionResult from raw macros
       const { detectMealContext } = await import('@/lib/food-recognition/prompts');
@@ -851,7 +863,7 @@ For now, I automatically detect your language from your messages.`,
         createdAt: new Date(), updatedAt: new Date(),
       };
 
-      const healthRating = await ratingEngine.evaluate(result as any, ratingProfile);
+      const healthRating = await ratingEngine.evaluate(result as any, ratingProfile, context.language);
 
       // Save to DB
       const { createClient } = await import('@/lib/supabase/server');
@@ -874,7 +886,8 @@ For now, I automatically detect your language from your messages.`,
 
       // Send response
       const emoji = healthRating.score >= 80 ? '🟢' : healthRating.score >= 60 ? '🟡' : '🔴';
-      let response = `${emoji} *Manual Log*\n`;
+      const title = context.language === 'en' ? 'Manual Log' : '手动记录';
+      let response = `${emoji} *${title}*\n`;
       response += `${cal} kcal · P${p}g · C${c}g · F${f}g · ${healthRating.score}/100`;
 
       const tip = healthRating.suggestions?.[0];
@@ -1399,8 +1412,7 @@ For now, I automatically detect your language from your messages.`,
         quickMode: false, createdAt: new Date(), updatedAt: new Date(),
       };
 
-      const healthRating = await ratingEngine.evaluate(recognition.result, ratingProfile);
-
+      const healthRating = await ratingEngine.evaluate(recognition.result, ratingProfile, context.language);
       // Save to database (no image)
       const { createClient } = await import('@/lib/supabase/server');
       const supabase = await createClient();
@@ -1431,7 +1443,7 @@ For now, I automatically detect your language from your messages.`,
 
       // Send concise response
       const { responseFormatterSG } = await import('./response-formatter-sg');
-      const responseMsg = responseFormatterSG.formatResponse(recognition.result, healthRating);
+      const responseMsg = responseFormatterSG.formatResponse(recognition.result, healthRating, undefined, context.language);
       await whatsappClient.sendTextMessage(message.from, responseMsg);
 
       // Send detail/modify/ignore buttons

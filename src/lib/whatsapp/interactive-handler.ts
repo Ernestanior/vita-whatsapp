@@ -249,7 +249,8 @@ Keep sending food photos and I'll guide you. 💪`,
 
       const detailMessage = responseFormatterSG.formatDetailResponse(
         record.recognition_result as any,
-        record.health_rating as any
+        record.health_rating as any,
+        context.language
       );
 
       await whatsappClient.sendTextMessage(context.userId, detailMessage);

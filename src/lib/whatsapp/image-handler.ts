@@ -192,7 +192,7 @@ export class ImageHandler {
         userId: context.userId,
       });
 
-      const healthRating = await ratingEngine.evaluate(recognitionResult, ratingProfile);
+      const healthRating = await ratingEngine.evaluate(recognitionResult, ratingProfile, context.language);
 
       // 10. Upload image to storage (non-blocking)
       let imageUrl = '';
@@ -587,7 +587,7 @@ export class ImageHandler {
     recordId: string
   ): Promise<void> {
     // Concise response: food + calories + score + one tip
-    const message = responseFormatterSG.formatResponse(result, rating);
+    const message = responseFormatterSG.formatResponse(result, rating, undefined, context.language);
 
     // Send the main message
     await whatsappClient.sendTextMessage(context.userId, message);

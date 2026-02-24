@@ -248,15 +248,15 @@ export class FoodRecognizer {
         return 'Missing nutrition data';
       }
 
-      // Validate ranges
+      // Validate ranges (allow min === max for zero-calorie items like black coffee)
       if (
-        nutrition.calories.min >= nutrition.calories.max ||
-        nutrition.protein.min >= nutrition.protein.max ||
-        nutrition.carbs.min >= nutrition.carbs.max ||
-        nutrition.fat.min >= nutrition.fat.max ||
-        nutrition.sodium.min >= nutrition.sodium.max
+        nutrition.calories.min > nutrition.calories.max ||
+        nutrition.protein.min > nutrition.protein.max ||
+        nutrition.carbs.min > nutrition.carbs.max ||
+        nutrition.fat.min > nutrition.fat.max ||
+        nutrition.sodium.min > nutrition.sodium.max
       ) {
-        return 'Invalid nutrition ranges (min should be less than max)';
+        return 'Invalid nutrition ranges (min should not exceed max)';
       }
     }
 

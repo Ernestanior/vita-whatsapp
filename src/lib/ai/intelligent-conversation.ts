@@ -76,7 +76,12 @@ export class IntelligentConversationHandler {
         temperature: 0.7,
       });
 
-      const aiResponse = response.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
+      const fallbackMsg = context.language === 'zh-CN'
+        ? '抱歉，我暂时无法回复，请稍后再试。'
+        : context.language === 'zh-TW'
+        ? '抱歉，我暫時無法回覆，請稍後再試。'
+        : 'Sorry, I could not generate a response. Please try again.';
+      const aiResponse = response.choices[0]?.message?.content || fallbackMsg;
 
       // Store this conversation for future context
       await this.storeConversation(userId, userMessage, aiResponse);
@@ -261,7 +266,9 @@ export class IntelligentConversationHandler {
 5. 如果用户已经提供了信息，不要再问相同的问题
 6. 保持简短（不超过150字），友好，有帮助
 
-回复风格：自然、友好、像朋友聊天，适当使用"lah"、"leh"等新加坡华语语气词。`
+回复风格：自然、友好、像朋友聊天，适当使用"lah"、"leh"等新加坡华语语气词。
+
+重要：无论用户用什么语言发消息，你都必须用中文回复。`
       : `\n**Important Instructions:**
 1. When user says "I have diabetes", understand they need sugar control advice, proactively provide relevant information
 2. When user says "I only eat vegetarian", understand they are vegetarian, remember this preference
@@ -270,7 +277,9 @@ export class IntelligentConversationHandler {
 5. If user already provided information, don't ask the same questions again
 6. Keep it short (under 150 words), friendly, and helpful
 
-Response Style: Natural, friendly, like chatting with a friend, use "lah", "leh" naturally in Singaporean style.`;
+Response Style: Natural, friendly, like chatting with a friend, use "lah", "leh" naturally in Singaporean style.
+
+IMPORTANT: You MUST reply in English regardless of what language the user writes in.`;
 
     return prompt;
   }
