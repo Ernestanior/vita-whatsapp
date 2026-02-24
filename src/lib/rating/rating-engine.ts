@@ -194,27 +194,52 @@ export class RatingEngine {
       goal: profile.goal,
     });
 
-    // Calculate macronutrient targets
-    // Protein: 1.2-2.0g per kg body weight (higher for muscle gain)
-    const proteinMultiplier = profile.goal === 'gain-muscle' ? 2.0 : 1.2;
-    const protein = profile.weight * proteinMultiplier;
+    // ── Protein target ──
+    let protein: number;
+    if (profile.proteinTarget) {
+      protein = profile.proteinTarget;
+    } else {
+      let proteinPerKg: number;
+      const training = profile.trainingType || 'none';
+      switch (profile.goal) {
+        case 'gain-muscle':
+          proteinPerKg = training === 'strength' ? 2.2 : 2.0;
+          break;
+        case 'lose-weight':
+          proteinPerKg = 1.6; // high protein to preserve muscle
+          break;
+        case 'control-sugar':
+          proteinPerKg = 1.2;
+          break;
+        default: // maintain
+          proteinPerKg = training === 'none' ? 1.0 : 1.4;
+      }
+      protein = profile.weight * proteinPerKg;
+    }
 
-    // Carbs: 50% of calories (4 cal/g)
-    const carbs = (calories * 0.5) / 4;
+    // ── Carb target ──
+    let carbs: number;
+    if (profile.carbTarget) {
+      carbs = profile.carbTarget;
+    } else {
+      let carbPercent: number;
+      switch (profile.goal) {
+        case 'gain-muscle': carbPercent = 0.50; break;
+        case 'lose-weight': carbPercent = 0.35; break;
+        case 'control-sugar': carbPercent = 0.30; break;
+        default: carbPercent = 0.45;
+      }
+      carbs = (calories * carbPercent) / 4;
+    }
 
-    // Fat: 25% of calories (9 cal/g)
-    const fat = (calories * 0.25) / 9;
+    // ── Fat: fill remaining calories (min 30g) ──
+    const fatCalories = calories - (protein * 4) - (carbs * 4);
+    const fat = Math.max(fatCalories / 9, 30);
 
     // Sodium: WHO recommendation is 2000mg/day
     const sodium = 2000;
 
-    return {
-      calories,
-      protein,
-      carbs,
-      fat,
-      sodium,
-    };
+    return { calories, protein, carbs, fat, sodium };
   }
 
   /**

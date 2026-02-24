@@ -24,6 +24,8 @@ export enum UserIntent {
   GREETING = 'GREETING',
   // Manual macro input (P35 C40 F12)
   MACRO_LOG = 'MACRO_LOG',
+  // Supplement quick log
+  SUPPLEMENT_LOG = 'SUPPLEMENT_LOG',
   // Phase 3
   STREAK = 'STREAK',
   BUDGET = 'BUDGET',
@@ -44,6 +46,8 @@ export interface IntentResult {
     goal?: 'lose-weight' | 'gain-muscle' | 'control-sugar' | 'maintain';
     // FOOD_LOG
     foodDescription?: string;
+    // SUPPLEMENT_LOG
+    supplementDescription?: string;
     // QUICK_SETUP
     quickSetupAge?: number;
     quickSetupHeight?: number;
@@ -70,6 +74,7 @@ INTENTS:
 - STREAK: Streak/check-in info. "连续", "打卡", "streak"
 - BUDGET: Calorie budget. "预算", "budget"
 - GREETING: Simple greeting. "你好", "hi", "hello", "嗨"
+- SUPPLEMENT_LOG: User logs a supplement/protein product. "喝了一杯蛋白粉", "ate a protein bar", "吃了蛋白棒", "ON金标蛋白粉一勺", "quest bar", "creatine 5g", "吃了肌酸"
 - GENERAL: Anything else — nutrition questions, general chat, unclear.
 
 CRITICAL RULES:
@@ -90,6 +95,7 @@ CRITICAL RULES:
    - "我不想增肌了，想减肥" → goal: "lose-weight"
    - "帮我控糖" / "control my sugar" → goal: "control-sugar"
 10. If user mentions reviewing/evaluating their past eating habits → HISTORY (not GENERAL)
+11. Supplements/protein products = SUPPLEMENT_LOG (not FOOD_LOG). Keywords: 蛋白粉, 蛋白棒, protein powder, protein bar, whey, casein, creatine, 肌酸, BCAA, pre-workout, 氮泵, mass gainer, 增肌粉, collagen, 胶原蛋白, fish oil, 鱼油, multivitamin, 维生素
 
 Respond with JSON only, no explanation:
 {"intent":"INTENT_NAME","confidence":0.95,"extractedData":{}}
@@ -110,7 +116,11 @@ User: "帮我看看我最近吃的健不健康" → {"intent":"HISTORY","confide
 User: "我今年30了" → {"intent":"PROFILE_UPDATE","confidence":0.95,"extractedData":{"age":30}}
 User: "我想减肥" → {"intent":"PROFILE_UPDATE","confidence":0.95,"extractedData":{"goal":"lose-weight"}}
 User: "I want to gain muscle" → {"intent":"PROFILE_UPDATE","confidence":0.95,"extractedData":{"goal":"gain-muscle"}}
-User: "不想增肌了，想减脂" → {"intent":"PROFILE_UPDATE","confidence":0.93,"extractedData":{"goal":"lose-weight"}}`;
+User: "不想增肌了，想减脂" → {"intent":"PROFILE_UPDATE","confidence":0.93,"extractedData":{"goal":"lose-weight"}}
+User: "喝了一杯蛋白粉" → {"intent":"SUPPLEMENT_LOG","confidence":0.96,"extractedData":{"supplementDescription":"一杯蛋白粉"}}
+User: "ate a quest bar" → {"intent":"SUPPLEMENT_LOG","confidence":0.95,"extractedData":{"supplementDescription":"quest bar"}}
+User: "ON金标一勺" → {"intent":"SUPPLEMENT_LOG","confidence":0.94,"extractedData":{"supplementDescription":"ON金标一勺"}}
+User: "creatine 5g" → {"intent":"SUPPLEMENT_LOG","confidence":0.93,"extractedData":{"supplementDescription":"creatine 5g"}}`;
 // ─── Valid intents for parsing ─────────────────────────
 const VALID_INTENTS = new Set(Object.values(UserIntent));
 

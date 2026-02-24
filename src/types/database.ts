@@ -52,6 +52,9 @@ export interface Database {
           gender: 'male' | 'female' | null
           goal: 'lose-weight' | 'gain-muscle' | 'control-sugar' | 'maintain'
           activity_level: 'sedentary' | 'light' | 'moderate' | 'active'
+          training_type: 'none' | 'strength' | 'cardio' | 'mixed'
+          protein_target: number | null
+          carb_target: number | null
           digest_time: string
           quick_mode: boolean
           created_at: string
@@ -65,6 +68,9 @@ export interface Database {
           gender?: 'male' | 'female' | null
           goal: 'lose-weight' | 'gain-muscle' | 'control-sugar' | 'maintain'
           activity_level?: 'sedentary' | 'light' | 'moderate' | 'active'
+          training_type?: 'none' | 'strength' | 'cardio' | 'mixed'
+          protein_target?: number | null
+          carb_target?: number | null
           digest_time?: string
           quick_mode?: boolean
           created_at?: string
@@ -78,6 +84,9 @@ export interface Database {
           gender?: 'male' | 'female' | null
           goal?: 'lose-weight' | 'gain-muscle' | 'control-sugar' | 'maintain'
           activity_level?: 'sedentary' | 'light' | 'moderate' | 'active'
+          training_type?: 'none' | 'strength' | 'cardio' | 'mixed'
+          protein_target?: number | null
+          carb_target?: number | null
           digest_time?: string
           quick_mode?: boolean
           created_at?: string

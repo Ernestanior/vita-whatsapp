@@ -25,6 +25,9 @@ export interface HealthProfile {
   gender: 'male' | 'female' | null;
   goal: 'lose-weight' | 'gain-muscle' | 'control-sugar' | 'maintain';
   activity_level: 'sedentary' | 'light' | 'moderate' | 'active';
+  training_type: 'none' | 'strength' | 'cardio' | 'mixed';
+  protein_target: number | null; // manual override (grams), null = auto
+  carb_target: number | null;    // manual override (grams), null = auto
   digest_time: string; // TIME format "HH:MM:SS"
   quick_mode: boolean;
   created_at: Date;

@@ -4,6 +4,7 @@ import { profileManager } from '@/lib/profile';
 import type { Message, MessageContext } from '@/types/whatsapp';
 import { UserIntent, unifiedIntentDetector } from '@/lib/ai/unified-intent-detector';
 import type { IntentResult } from '@/lib/ai/unified-intent-detector';
+import { matchSupplement } from '@/lib/supplement/supplement-db';
 
 // Re-export for backward compatibility
 export { UserIntent as Command } from '@/lib/ai/unified-intent-detector';
@@ -99,6 +100,13 @@ export class TextHandler {
         return;
       }
 
+      // ── Step 1.6: Supplement pre-detection (local DB, no AI) ──
+      const supplementMatch = matchSupplement(text);
+      if (supplementMatch) {
+        await this.handleSupplementLog(supplementMatch.entry, supplementMatch.quantity, message, context);
+        return;
+      }
+
       // ── Step 2: Setup flow intercept ─────────────────────
       if (await profileManager.isInSetupFlow(context.userId)) {
         await profileManager.processSetupInput(context.userId, text, context.language);
@@ -179,6 +187,16 @@ export class TextHandler {
       case UserIntent.PROFILE_UPDATE:
         await this.handleProfileUpdate(extractedData, text, message, context);
         break;
+      case UserIntent.SUPPLEMENT_LOG: {
+        const match = matchSupplement(extractedData?.supplementDescription || text);
+        if (match) {
+          await this.handleSupplementLog(match.entry, match.quantity, message, context);
+        } else {
+          // Fallback: treat as food log
+          await this.handleFoodLog(extractedData?.supplementDescription || text, message, context);
+        }
+        break;
+      }
       case UserIntent.QUICK_SETUP:
         if (extractedData?.quickSetupAge && extractedData?.quickSetupHeight && extractedData?.quickSetupWeight) {
           await this.handleQuickSetup(message.from, context, {
@@ -811,6 +829,127 @@ For now, I automatically detect your language from your messages.`,
     }
   }
 
+  // ─── Supplement log handler ─────────────────────────
+  private async handleSupplementLog(
+    entry: import('@/lib/supplement/supplement-db').SupplementEntry,
+    quantity: number,
+    message: Message,
+    context: MessageContext
+  ): Promise<void> {
+    try {
+      const n = entry.nutrition;
+      const cal = Math.round(n.calories * quantity);
+      const p = Math.round(n.protein * quantity);
+      const c = Math.round(n.carbs * quantity);
+      const f = Math.round(n.fat * quantity);
+
+      const { detectMealContext } = await import('@/lib/food-recognition/prompts');
+      const mealContext = detectMealContext(new Date());
+
+      const nutrition = {
+        calories: { min: cal, max: cal },
+        protein: { min: p, max: p },
+        carbs: { min: c, max: c },
+        fat: { min: f, max: f },
+        sodium: { min: 0, max: 0 },
+      };
+
+      const servingLabel = quantity === 1 ? entry.defaultServing : `${quantity} × ${entry.defaultServing}`;
+      const displayName = entry.brand ? `${entry.brand} ${entry.id}` : entry.id;
+
+      const result = {
+        foods: [{
+          name: displayName,
+          nameLocal: displayName,
+          confidence: 100,
+          portion: servingLabel,
+          nutrition,
+        }],
+        totalNutrition: nutrition,
+        mealContext,
+      };
+
+      // Rating
+      const { ratingEngine } = await import('@/lib/rating/rating-engine');
+      const profile = await profileManager.getProfile(context.userId);
+      const ratingProfile = profile ? {
+        userId: profile.user_id,
+        height: profile.height, weight: profile.weight,
+        age: profile.age ?? undefined, gender: profile.gender ?? undefined,
+        goal: profile.goal, activityLevel: profile.activity_level,
+        trainingType: (profile.training_type as any) || 'none',
+        proteinTarget: profile.protein_target || undefined,
+        carbTarget: profile.carb_target || undefined,
+        digestTime: profile.digest_time, quickMode: profile.quick_mode,
+        createdAt: new Date(profile.created_at), updatedAt: new Date(profile.updated_at),
+      } : {
+        userId: context.userId,
+        height: 170, weight: 65, age: 30, gender: 'male' as const,
+        goal: 'maintain' as const, activityLevel: 'light' as const,
+        trainingType: 'none' as const,
+        digestTime: '21:00:00', quickMode: false,
+        createdAt: new Date(), updatedAt: new Date(),
+      };
+
+      const healthRating = await ratingEngine.evaluate(result as any, ratingProfile, context.language);
+
+      // Save to DB
+      const { createClient } = await import('@/lib/supabase/server');
+      const supabase = await createClient();
+      const { data: user } = await supabase
+        .from('users').select('id').eq('phone_number', message.from).maybeSingle();
+
+      let recordId: string | null = null;
+      if (user) {
+        const { data: record } = await supabase
+          .from('food_records')
+          .insert({
+            user_id: user.id, image_url: null, image_hash: null,
+            recognition_result: result as any, health_rating: healthRating as any,
+            meal_context: mealContext,
+          })
+          .select('id').single();
+        recordId = record?.id ?? null;
+      }
+
+      // Response
+      const emoji = healthRating.score >= 80 ? '🟢' : healthRating.score >= 60 ? '🟡' : '🔴';
+      const title = context.language === 'en' ? '💊 Supplement' : '💊 补剂';
+      let response = `${emoji} *${title}*\n`;
+      response += entry.brand ? `${entry.brand} · ` : '';
+      response += `${servingLabel}\n`;
+      response += `${cal} kcal · P${p}g · C${c}g · F${f}g · ${healthRating.score}/100`;
+
+      const tip = healthRating.suggestions?.[0];
+      if (tip) response += `\n\n💡 ${tip}`;
+
+      await whatsappClient.sendTextMessage(message.from, response);
+
+      if (recordId) {
+        const btns = context.language === 'en'
+          ? { detail: '📊 Details', ignore: '❌ Ignore' }
+          : { detail: '📊 详情', ignore: '❌ 忽略' };
+        await whatsappClient.sendInteractiveButtons(
+          message.from,
+          context.language === 'en' ? 'Tap for more info' : '点击查看更多',
+          [
+            { id: `detail_${recordId}`, title: btns.detail },
+            { id: `ignore_${recordId}`, title: btns.ignore },
+          ]
+        );
+      }
+
+      logger.info({ type: 'supplement_log_success', userId: context.userId, supplement: entry.id, quantity, cal });
+    } catch (error) {
+      logger.error({
+        type: 'supplement_log_error',
+        userId: context.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      await this.sendErrorMessage(message.from, context.language);
+    }
+  }
+
   // ─── Macro input handlers ─────────────────────────
   private async handleMacroLog(
     macros: { protein?: number; carbs?: number; fat?: number },
@@ -867,12 +1006,16 @@ For now, I automatically detect your language from your messages.`,
         height: profile.height, weight: profile.weight,
         age: profile.age ?? undefined, gender: profile.gender ?? undefined,
         goal: profile.goal, activityLevel: profile.activity_level,
+        trainingType: (profile.training_type as any) || 'none',
+        proteinTarget: profile.protein_target || undefined,
+        carbTarget: profile.carb_target || undefined,
         digestTime: profile.digest_time, quickMode: profile.quick_mode,
         createdAt: new Date(profile.created_at), updatedAt: new Date(profile.updated_at),
       } : {
         userId: context.userId,
         height: 170, weight: 65, age: 30, gender: 'male' as const,
         goal: 'maintain' as const, activityLevel: 'light' as const,
+        trainingType: 'none' as const,
         digestTime: '21:00:00', quickMode: false,
         createdAt: new Date(), updatedAt: new Date(),
       };
@@ -1304,11 +1447,44 @@ For now, I automatically detect your language from your messages.`,
         }
       }
 
-      // Get user profile for calorie target
+      // Get user profile + macro targets via RatingEngine
       const { profileManager } = await import('@/lib/profile');
-      const profile = await profileManager.getProfile(message.from);
-      const goal = profile?.goal || 'maintain';
-      const targetCal = profile ? this.estimateDailyCalories(profile) : 2000;
+      const dbProfile = await profileManager.getProfile(message.from);
+      const goal = dbProfile?.goal || 'maintain';
+
+      // Build macro target info
+      let targetInfo = 'Daily target: ~2000 kcal';
+      let gapInfo = '';
+      if (dbProfile?.height && dbProfile?.weight && dbProfile?.age) {
+        const { RatingEngine } = await import('@/lib/rating/rating-engine');
+        const ratingEngine = new RatingEngine();
+        const userProfile = {
+          height: dbProfile.height,
+          weight: dbProfile.weight,
+          age: dbProfile.age,
+          gender: (dbProfile.gender as 'male' | 'female') || 'male',
+          activityLevel: dbProfile.activity_level || 'moderate',
+          goal: dbProfile.goal || 'maintain',
+          trainingType: dbProfile.training_type || 'none',
+          proteinTarget: dbProfile.protein_target || undefined,
+          carbTarget: dbProfile.carb_target || undefined,
+        };
+        const target = ratingEngine.calculateDailyTarget(userProfile as any);
+        targetInfo = `Daily targets: ${target.calories} kcal, ${Math.round(target.protein)}g protein, ${Math.round(target.carbs)}g carbs, ${Math.round(target.fat)}g fat`;
+
+        // Calculate gap from today's intake
+        if (todaySummary !== 'No meals logged today yet.') {
+          const calMatch = todaySummary.match(/(\d+) kcal/);
+          const proMatch = todaySummary.match(/(\d+)g protein/);
+          const carbMatch = todaySummary.match(/(\d+)g carbs/);
+          const eaten = {
+            cal: calMatch ? parseInt(calMatch[1]) : 0,
+            protein: proMatch ? parseInt(proMatch[1]) : 0,
+            carbs: carbMatch ? parseInt(carbMatch[1]) : 0,
+          };
+          gapInfo = `\nRemaining budget: ${target.calories - eaten.cal} kcal, ${Math.round(target.protein) - eaten.protein}g protein, ${Math.round(target.carbs) - eaten.carbs}g carbs. Prioritize the most deficient macro.`;
+        }
+      }
 
       // Ask AI for recommendation
       const { openai } = await import('@/lib/openai/client');
@@ -1317,7 +1493,7 @@ For now, I automatically detect your language from your messages.`,
         messages: [
           {
             role: 'system',
-            content: `You are a Singapore nutrition assistant. The user is asking what to eat next. Give 2-3 specific Singapore hawker food suggestions based on their nutrition gap. Keep it short (under 100 words). Use the user's language. Goal: ${goal}. Daily calorie target: ${targetCal} kcal.`,
+            content: `You are a Singapore nutrition assistant. The user is asking what to eat next. Give 2-3 specific Singapore hawker food suggestions based on their nutrition gap. Keep it short (under 100 words). Use the user's language. Goal: ${goal}. ${targetInfo}.${gapInfo}`,
           },
           {
             role: 'user',
@@ -1339,28 +1515,6 @@ For now, I automatically detect your language from your messages.`,
       });
       return false;
     }
-  }
-
-  /**
-   * Estimate daily calorie target from profile
-   */
-  private estimateDailyCalories(profile: any): number {
-    const { height, weight, age, gender, activity_level, goal } = profile;
-    if (!height || !weight || !age) return 2000;
-
-    // Mifflin-St Jeor
-    let bmr = 10 * weight + 6.25 * height - 5 * age;
-    bmr += gender === 'male' ? 5 : -161;
-
-    const multipliers: Record<string, number> = {
-      sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725,
-    };
-    let tdee = bmr * (multipliers[activity_level] || 1.375);
-
-    if (goal === 'lose-weight') tdee -= 300;
-    if (goal === 'gain-muscle') tdee += 200;
-
-    return Math.round(tdee);
   }
 
   /**
@@ -1414,6 +1568,9 @@ For now, I automatically detect your language from your messages.`,
         gender: profile.gender ?? undefined,
         goal: profile.goal,
         activityLevel: profile.activity_level,
+        trainingType: (profile.training_type as any) || 'none',
+        proteinTarget: profile.protein_target || undefined,
+        carbTarget: profile.carb_target || undefined,
         digestTime: profile.digest_time,
         quickMode: profile.quick_mode,
         createdAt: new Date(profile.created_at),
@@ -1422,7 +1579,8 @@ For now, I automatically detect your language from your messages.`,
         userId: context.userId,
         height: 170, weight: 65, age: 30,
         gender: 'male' as const, goal: 'maintain' as const,
-        activityLevel: 'light' as const, digestTime: '21:00:00',
+        activityLevel: 'light' as const, trainingType: 'none' as const,
+        digestTime: '21:00:00',
         quickMode: false, createdAt: new Date(), updatedAt: new Date(),
       };
 

@@ -17,6 +17,7 @@ interface ConversationContext {
     gender?: string;
     goal?: string;
     activityLevel?: string;
+    trainingType?: string;
   };
   recentMessages: Array<{
     role: 'user' | 'assistant';
@@ -161,6 +162,7 @@ export class IntelligentConversationHandler {
         gender: profile.gender,
         goal: profile.goal,
         activityLevel: profile.activity_level,
+        trainingType: profile.training_type || 'none',
       } : undefined,
       recentMessages: [], // TODO: Implement message history storage
       recentMeals,
