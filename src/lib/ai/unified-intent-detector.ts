@@ -41,6 +41,7 @@ export interface IntentResult {
     age?: number;
     gender?: 'male' | 'female';
     weightChange?: number;
+    goal?: 'lose-weight' | 'gain-muscle' | 'control-sugar' | 'maintain';
     // FOOD_LOG
     foodDescription?: string;
     // QUICK_SETUP
@@ -58,7 +59,7 @@ Classify the user message into ONE intent and optionally extract structured data
 INTENTS:
 - FOOD_LOG: User DESCRIBES food they ate/are eating. "吃了鸡饭", "I had pasta", "午饭吃了皮蛋粥", "早餐喝了咖啡吃了面包"
 - MEAL_ADVICE: User ASKS what to eat / wants food suggestions. "午饭吃什么好", "what should I eat", "推荐午餐"
-- PROFILE_UPDATE: User PROVIDES or IMPLIES personal info changes. "I'm 65kg now", "我身高170", "胖了两斤", "我怀孕了"(implies female), "做了变性手术"(implies gender change), "我今年30了"(age=30)
+- PROFILE_UPDATE: User PROVIDES or IMPLIES personal info changes. "I'm 65kg now", "我身高170", "胖了两斤", "我怀孕了"(implies female), "做了变性手术"(implies gender change), "我今年30了"(age=30), "我想减肥"(goal change), "I want to gain muscle"(goal change)
 - QUICK_SETUP: Exactly 2-3 numbers = age height weight. "25 170 65"
 - STATS: User wants to VIEW statistics/analysis. "看数据", "show stats", "数据分析"
 - HISTORY: User wants to VIEW past meal records. "最近吃了什么", "show my meals", "查看历史", "帮我看看最近吃的", "review my meals"
@@ -83,7 +84,12 @@ CRITICAL RULES:
    - "我怀孕了" → gender: "female"
    - "做了变性手术" / "I transitioned" → infer new gender from context
    - "我今年30了" → age: 30
-9. If user mentions reviewing/evaluating their past eating habits → HISTORY (not GENERAL)
+9. Goal changes = PROFILE_UPDATE. Extract goal as: "lose-weight", "gain-muscle", "control-sugar", or "maintain". Examples:
+   - "我想减肥" / "I want to lose weight" → goal: "lose-weight"
+   - "我要增肌" / "I want to gain muscle" → goal: "gain-muscle"
+   - "我不想增肌了，想减肥" → goal: "lose-weight"
+   - "帮我控糖" / "control my sugar" → goal: "control-sugar"
+10. If user mentions reviewing/evaluating their past eating habits → HISTORY (not GENERAL)
 
 Respond with JSON only, no explanation:
 {"intent":"INTENT_NAME","confidence":0.95,"extractedData":{}}
@@ -101,7 +107,10 @@ User: "查看历史记录" → {"intent":"HISTORY","confidence":0.98,"extractedD
 User: "我的连续打卡" → {"intent":"STREAK","confidence":0.95,"extractedData":{}}
 User: "我怀孕了" → {"intent":"PROFILE_UPDATE","confidence":0.88,"extractedData":{"gender":"female"}}
 User: "帮我看看我最近吃的健不健康" → {"intent":"HISTORY","confidence":0.90,"extractedData":{}}
-User: "我今年30了" → {"intent":"PROFILE_UPDATE","confidence":0.95,"extractedData":{"age":30}}`;
+User: "我今年30了" → {"intent":"PROFILE_UPDATE","confidence":0.95,"extractedData":{"age":30}}
+User: "我想减肥" → {"intent":"PROFILE_UPDATE","confidence":0.95,"extractedData":{"goal":"lose-weight"}}
+User: "I want to gain muscle" → {"intent":"PROFILE_UPDATE","confidence":0.95,"extractedData":{"goal":"gain-muscle"}}
+User: "不想增肌了，想减脂" → {"intent":"PROFILE_UPDATE","confidence":0.93,"extractedData":{"goal":"lose-weight"}}`;
 // ─── Valid intents for parsing ─────────────────────────
 const VALID_INTENTS = new Set(Object.values(UserIntent));
 

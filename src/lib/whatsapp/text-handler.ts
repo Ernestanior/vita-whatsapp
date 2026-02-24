@@ -787,6 +787,20 @@ For now, I automatically detect your language from your messages.`,
     message: Message,
     context: MessageContext
   ): Promise<void> {
+    // If AI already extracted goal, inject keyword so parseNaturalLanguageUpdate picks it up
+    if (extractedData?.goal) {
+      const goalKeywordMap: Record<string, string> = {
+        'lose-weight': '减肥',
+        'gain-muscle': '增肌',
+        'control-sugar': '控糖',
+        'maintain': '维持',
+      };
+      const keyword = goalKeywordMap[extractedData.goal];
+      if (keyword && !text.includes(keyword)) {
+        text = `${text} ${keyword}`;
+      }
+    }
+
     const wasUpdated = await profileManager.parseNaturalLanguageUpdate(
       context.userId,
       text,

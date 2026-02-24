@@ -1285,20 +1285,41 @@ Please try again with the correct format.`,
       }
     }
 
+    // Extract goal
+    const goalKeywords: { keywords: string[]; goal: HealthProfile['goal'] }[] = [
+      { keywords: ['减肥', '减脂', '減肥', '減脂', '瘦', 'lose weight', 'cut fat', 'slim'], goal: 'lose-weight' },
+      { keywords: ['增肌', '长肌肉', '長肌肉', 'gain muscle', 'build muscle', 'bulk'], goal: 'gain-muscle' },
+      { keywords: ['控糖', '糖尿病', '血糖', 'control sugar', 'diabetes', 'blood sugar'], goal: 'control-sugar' },
+      { keywords: ['维持', '維持', '保持', 'maintain', 'keep healthy'], goal: 'maintain' },
+    ];
+    for (const { keywords, goal } of goalKeywords) {
+      if (keywords.some(k => normalized.includes(k))) {
+        updates.goal = goal;
+        break;
+      }
+    }
+
     // If we found updates, apply them
     if (Object.keys(updates).length > 0) {
       await this.updateProfile(userId, updates);
 
+      const goalLabels: Record<string, Record<string, string>> = {
+        'lose-weight': { en: 'Lose Weight', 'zh-CN': '减肥', 'zh-TW': '減肥' },
+        'gain-muscle': { en: 'Gain Muscle', 'zh-CN': '增肌', 'zh-TW': '增肌' },
+        'control-sugar': { en: 'Control Sugar', 'zh-CN': '控糖', 'zh-TW': '控糖' },
+        'maintain': { en: 'Maintain', 'zh-CN': '维持健康', 'zh-TW': '維持健康' },
+      };
+
       const messages = {
         'en': `✅ Profile updated successfully!
 
-${updates.gender ? `• Gender: ${updates.gender === 'female' ? 'Female' : 'Male'}\n` : ''}${updates.height ? `• Height: ${updates.height} cm\n` : ''}${updates.weight ? `• Weight: ${updates.weight} kg\n` : ''}`,
+${updates.gender ? `• Gender: ${updates.gender === 'female' ? 'Female' : 'Male'}\n` : ''}${updates.height ? `• Height: ${updates.height} cm\n` : ''}${updates.weight ? `• Weight: ${updates.weight} kg\n` : ''}${updates.goal ? `• Goal: ${goalLabels[updates.goal]?.en ?? updates.goal}\n` : ''}`,
         'zh-CN': `✅ 画像更新成功！
 
-${updates.gender ? `• 性别：${updates.gender === 'female' ? '女' : '男'}\n` : ''}${updates.height ? `• 身高：${updates.height} 厘米\n` : ''}${updates.weight ? `• 体重：${updates.weight} 公斤\n` : ''}`,
+${updates.gender ? `• 性别：${updates.gender === 'female' ? '女' : '男'}\n` : ''}${updates.height ? `• 身高：${updates.height} 厘米\n` : ''}${updates.weight ? `• 体重：${updates.weight} 公斤\n` : ''}${updates.goal ? `• 目标：${goalLabels[updates.goal]?.['zh-CN'] ?? updates.goal}\n` : ''}`,
         'zh-TW': `✅ 畫像更新成功！
 
-${updates.gender ? `• 性別：${updates.gender === 'female' ? '女' : '男'}\n` : ''}${updates.height ? `• 身高：${updates.height} 厘米\n` : ''}${updates.weight ? `• 體重：${updates.weight} 公斤\n` : ''}`,
+${updates.gender ? `• 性別：${updates.gender === 'female' ? '女' : '男'}\n` : ''}${updates.height ? `• 身高：${updates.height} 厘米\n` : ''}${updates.weight ? `• 體重：${updates.weight} 公斤\n` : ''}${updates.goal ? `• 目標：${goalLabels[updates.goal]?.['zh-TW'] ?? updates.goal}\n` : ''}`,
       };
 
       await whatsappClient.sendTextMessage(userId, messages[language]);
