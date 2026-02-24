@@ -161,7 +161,7 @@ export class IntelligentConversationHandler {
       recentMeals,
       userPreferences: preferences ? {
         dietaryType: preferences.dietary_type || [],
-        allergies: preferences.allergies || [],
+        allergies: (preferences.allergies as string[]) || [],
       } : undefined,
       streakInfo: streak ? {
         currentStreak: streak.current_streak,

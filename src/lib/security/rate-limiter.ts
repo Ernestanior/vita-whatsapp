@@ -48,7 +48,7 @@ export async function checkRateLimit(
       // 获取最早的请求时间，计算重置时间
       const oldestRequest = await redis.zrange(key, 0, 0, { withScores: true });
       const resetAt = oldestRequest.length > 0
-        ? new Date(Number(oldestRequest[0].score) + config.windowMs)
+        ? new Date(Number((oldestRequest[0] as any).score) + config.windowMs)
         : new Date(now + config.windowMs);
 
       return {

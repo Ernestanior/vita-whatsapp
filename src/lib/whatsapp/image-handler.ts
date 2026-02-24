@@ -374,7 +374,7 @@ export class ImageHandler {
 
     // Free users: use atomic operation
     const today = new Date().toISOString().split('T')[0];
-    const { data, error } = await supabase.rpc('check_and_increment_quota', {
+    const { data, error } = await (supabase.rpc as any)('check_and_increment_quota', {
       p_user_id: userUuid,
       p_date: today,
       p_limit: 3, // Free tier limit
@@ -411,7 +411,7 @@ export class ImageHandler {
       };
     }
 
-    const result = data[0];
+    const result = data[0] as any;
     return {
       allowed: result.allowed,
       remaining: result.remaining,
@@ -558,8 +558,8 @@ export class ImageHandler {
       meal_context: recognitionResult.mealContext,
     };
 
-    const { data, error} = await supabase
-      .from('food_records')
+    const { data, error} = await (supabase
+      .from('food_records') as any)
       .insert(record)
       .select('id')
       .single();

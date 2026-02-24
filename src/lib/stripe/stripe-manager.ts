@@ -185,7 +185,7 @@ export class StripeManager {
     const supabase = await createClient();
 
     // Check if event has already been processed (idempotency)
-    const { data: existing } = await supabase
+    const { data: existing } = await (supabase as any)
       .from('stripe_events')
       .select('event_id')
       .eq('event_id', event.id)
@@ -206,7 +206,7 @@ export class StripeManager {
     }
 
     // Record the event to prevent duplicate processing
-    const { error: recordError } = await supabase
+    const { error: recordError } = await (supabase as any)
       .from('stripe_events')
       .insert({
         event_id: event.id,
@@ -354,9 +354,10 @@ export class StripeManager {
     });
 
     // Get user ID from subscription metadata
-    if (invoice.subscription) {
+    const subId = (invoice as any).subscription || (invoice as any).parent?.subscription_details?.subscription;
+    if (subId) {
       const subscription = await stripe.subscriptions.retrieve(
-        invoice.subscription as string
+        typeof subId === 'string' ? subId : subId.id
       );
       const userId = subscription.metadata.userId;
 
@@ -389,9 +390,10 @@ export class StripeManager {
     });
 
     // Get user ID from subscription metadata
-    if (invoice.subscription) {
+    const subId = (invoice as any).subscription || (invoice as any).parent?.subscription_details?.subscription;
+    if (subId) {
       const subscription = await stripe.subscriptions.retrieve(
-        invoice.subscription as string
+        typeof subId === 'string' ? subId : subId.id
       );
       const userId = subscription.metadata.userId;
 

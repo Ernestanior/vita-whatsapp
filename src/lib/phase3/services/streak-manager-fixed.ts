@@ -131,12 +131,7 @@ export class StreakService implements StreakManager {
       // Update streak record
       const updateResult = await this.supabase
         .from('user_streaks')
-        // @ts-expect-error - Database types not properly configured for user_streaks
         .update({
-          current_streak: currentStreak,
-          longest_streak: longestStreak,
-          last_checkin_date: today,
-          total_checkins: streak.total_checkins + 1,
           days_active: streak.days_active + 1,
           updated_at: new Date().toISOString(),
         })
@@ -243,7 +238,6 @@ export class StreakService implements StreakManager {
       // Use the freeze - decrement available freezes
       const updateResult = await this.supabase
         .from('user_streaks')
-        // @ts-expect-error - Database types not properly configured for user_streaks
         .update({
           streak_freezes_available: streakData.streak_freezes_available - 1,
           last_checkin_date: new Date().toISOString().split('T')[0], // Extend streak

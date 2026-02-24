@@ -41,6 +41,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       health_profiles: {
         Row: {
@@ -82,6 +83,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       food_records: {
         Row: {
@@ -114,6 +116,7 @@ export interface Database {
           meal_context?: 'breakfast' | 'lunch' | 'dinner' | 'snack' | null
           created_at?: string
         }
+        Relationships: []
       }
       subscriptions: {
         Row: {
@@ -152,6 +155,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       usage_quotas: {
         Row: {
@@ -178,6 +182,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       login_tokens: {
         Row: {
@@ -204,6 +209,7 @@ export interface Database {
           used?: boolean
           created_at?: string
         }
+        Relationships: []
       }
       user_preferences: {
         Row: {
@@ -236,6 +242,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       daily_budgets: {
         Row: {
@@ -268,6 +275,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       user_streaks: {
         Row: {
@@ -306,6 +314,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       achievements: {
         Row: {
@@ -338,6 +347,7 @@ export interface Database {
           share_count?: number
           created_at?: string
         }
+        Relationships: []
       }
       reminders: {
         Row: {
@@ -379,6 +389,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       visual_cards: {
         Row: {
@@ -411,6 +422,7 @@ export interface Database {
           share_count?: number
           created_at?: string
         }
+        Relationships: []
       }
       feature_discovery: {
         Row: {
@@ -443,6 +455,7 @@ export interface Database {
           last_mentioned_date?: string
           created_at?: string
         }
+        Relationships: []
       }
       user_engagement_metrics: {
         Row: {
@@ -475,6 +488,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       social_connections: {
         Row: {
@@ -504,6 +518,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       community_challenges: {
         Row: {
@@ -533,6 +548,7 @@ export interface Database {
           participants_count?: number
           created_at?: string
         }
+        Relationships: []
       }
       user_challenge_progress: {
         Row: {
@@ -565,6 +581,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
     }
     Functions: {
@@ -589,6 +606,15 @@ export interface Database {
           red_count: number
         }[]
       }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
     }
   }
 }

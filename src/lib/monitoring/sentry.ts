@@ -26,12 +26,8 @@ export function initSentry() {
     // 错误采样率
     sampleRate: 1.0,
 
-    // 启用性能监控
-    integrations: [
-      new Sentry.BrowserTracing({
-        tracePropagationTargets: ['localhost', env.NEXT_PUBLIC_URL],
-      }),
-    ],
+    // 性能监控 — Sentry v8 自动注入 BrowserTracing
+    tracePropagationTargets: ['localhost', env.NEXT_PUBLIC_URL],
 
     // 过滤敏感信息
     beforeSend(event, hint) {
@@ -173,10 +169,7 @@ export function addBreadcrumb(breadcrumb: {
  * 用于性能监控
  */
 export function startTransaction(name: string, op: string) {
-  return Sentry.startTransaction({
-    name,
-    op,
-  });
+  return Sentry.startSpan({ name, op }, () => {});
 }
 
 /**
@@ -230,19 +223,12 @@ export function trackAPICall(params: {
   setTag('api.model', params.model);
   setTag('api.success', params.success.toString());
 
-  // 记录性能指标
-  if (typeof Sentry.metrics !== 'undefined') {
-    Sentry.metrics.increment('api.calls', 1, {
-      tags: { model: params.model, success: params.success.toString() },
-    });
-    Sentry.metrics.distribution('api.duration', params.duration, {
-      tags: { model: params.model },
-      unit: 'millisecond',
-    });
-    Sentry.metrics.distribution('api.cost', params.cost, {
-      tags: { model: params.model },
-      unit: 'none',
-    });
+  // 记录性能指标 — Sentry v8 metrics via top-level helpers
+  try {
+    Sentry.setMeasurement('api.duration', params.duration, 'millisecond');
+    Sentry.setMeasurement('api.cost', params.cost, 'none');
+  } catch {
+    // metrics not available in this environment
   }
 }
 
@@ -256,12 +242,6 @@ export function trackCacheHit(hit: boolean, key?: string) {
     level: 'debug',
     data: { hit, key },
   });
-
-  if (typeof Sentry.metrics !== 'undefined') {
-    Sentry.metrics.increment('cache.requests', 1, {
-      tags: { hit: hit.toString() },
-    });
-  }
 }
 
 /**
@@ -272,12 +252,13 @@ export function trackCost(params: {
   amount: number;
   userId?: string;
 }) {
-  if (typeof Sentry.metrics !== 'undefined') {
-    Sentry.metrics.gauge(`cost.${params.type}`, params.amount, {
-      tags: params.userId ? { userId: params.userId } : undefined,
-      unit: 'none',
-    });
-  }
+  // 成本追踪通过 breadcrumb 记录
+  addBreadcrumb({
+    message: `Cost: ${params.type} = $${params.amount}`,
+    category: 'cost',
+    level: 'info',
+    data: { type: params.type, amount: params.amount, userId: params.userId },
+  });
 
   // 如果成本异常高，发送告警
   if (params.type === 'daily' && params.amount > env.MAX_DAILY_COST) {
@@ -322,11 +303,12 @@ export function trackUserActivity(params: {
 export function trackErrorRate(errorCount: number, totalRequests: number) {
   const errorRate = totalRequests > 0 ? (errorCount / totalRequests) * 100 : 0;
 
-  if (typeof Sentry.metrics !== 'undefined') {
-    Sentry.metrics.gauge('error.rate', errorRate, {
-      unit: 'percent',
-    });
-  }
+  addBreadcrumb({
+    message: `Error rate: ${errorRate.toFixed(2)}%`,
+    category: 'metrics',
+    level: errorRate > 5 ? 'warning' : 'info',
+    data: { errorCount, totalRequests, errorRate },
+  });
 
   // 如果错误率超过 5%，发送告警
   if (errorRate > 5) {

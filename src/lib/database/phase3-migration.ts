@@ -58,7 +58,7 @@ export async function verifyPhase3Tables(): Promise<{
 
   for (const table of tablesToCheck) {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from(table)
         .select('id')
         .limit(1);

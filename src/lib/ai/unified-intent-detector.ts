@@ -22,6 +22,8 @@ export enum UserIntent {
   PROFILE_UPDATE = 'PROFILE_UPDATE',
   QUICK_SETUP = 'QUICK_SETUP',
   GREETING = 'GREETING',
+  // Manual macro input (P35 C40 F12)
+  MACRO_LOG = 'MACRO_LOG',
   // Phase 3
   STREAK = 'STREAK',
   BUDGET = 'BUDGET',

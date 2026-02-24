@@ -74,5 +74,5 @@ export function formatTime(date: Date, language: Language): string {
   }).format(date);
 }
 
-export { Language, Translations };
+export type { Language, Translations };
 export * from './translations';

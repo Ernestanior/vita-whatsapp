@@ -34,9 +34,27 @@ export class TextHandler {
     '预算': UserIntent.BUDGET, '預算': UserIntent.BUDGET,
   };
 
+  // ─── Macro input parsing (P35 C40 F12) ──────────────
+  static parseMacros(text: string): { protein?: number; carbs?: number; fat?: number } | null {
+    const normalized = text.trim().toUpperCase();
+    const macros: { protein?: number; carbs?: number; fat?: number } = {};
+    for (const match of normalized.matchAll(/\b([PCF])\s*(\d+(?:\.\d+)?)/g)) {
+      const [, letter, num] = match;
+      if (letter === 'P') macros.protein = parseFloat(num);
+      else if (letter === 'C') macros.carbs = parseFloat(num);
+      else if (letter === 'F') macros.fat = parseFloat(num);
+    }
+    return Object.keys(macros).length > 0 ? macros : null;
+  }
+
+  static isMacroInput(text: string): boolean {
+    const cleaned = text.trim().toUpperCase().replace(/[PCF]\s*\d+(?:\.\d+)?/g, '').trim();
+    return cleaned === '' && TextHandler.parseMacros(text) !== null;
+  }
+
   /**
    * Handle incoming text message
-   * Flow: exact match → setup flow → unified AI intent → route
+   * Flow: exact match → macro pre-detect → setup flow → unified AI intent → route
    */
   async handle(message: Message, context: MessageContext): Promise<void> {
     const text = message.text?.body;
@@ -63,6 +81,17 @@ export class TextHandler {
           }
         }
         await this.routeIntent({ intent: exactIntent, confidence: 1 }, text, message, context);
+        return;
+      }
+
+      // ── Step 1.5: Macro input pre-detection (regex, no AI) ──
+      if (TextHandler.isMacroInput(text)) {
+        const macros = TextHandler.parseMacros(text)!;
+        if (Object.keys(macros).length >= 2) {
+          await this.handleMacroLog(macros, message, context);
+        } else {
+          await this.handlePartialMacro(macros, message, context);
+        }
         return;
       }
 
@@ -129,6 +158,11 @@ export class TextHandler {
       case UserIntent.STREAK:
       case UserIntent.BUDGET:
         await this.handlePhase3Command(intent, message.from, context, text);
+        break;
+
+      // Macro log (safety net — regex pre-detection should catch this first)
+      case UserIntent.MACRO_LOG:
+        await this.handleGeneralChat(text, message, context);
         break;
 
       // AI-detected intents
@@ -221,6 +255,9 @@ No setup needed. I'll learn about you as we go.
 Want personalized advice now?
 Send: \`25 170 65\` (age height weight)
 
+💪 *Quick Macro Log:*
+Send: \`P35 C40 F12\` to log macros directly
+
 Ready? Send your first food photo! 📸`,
         
         'zh-CN': `👋 *欢迎使用 Vita AI！*
@@ -238,6 +275,9 @@ Ready? Send your first food photo! 📸`,
 想要个性化建议？
 发送：\`25 170 65\`（年龄 身高 体重）
 
+💪 *快速记录宏量：*
+发送：\`P35 C40 F12\` 直接记录
+
 准备好了吗？发送您的第一张食物照片！📸`,
         
         'zh-TW': `👋 *歡迎使用 Vita AI！*
@@ -254,6 +294,9 @@ Ready? Send your first food photo! 📸`,
 *可選快速設置：*
 想要個性化建議？
 發送：\`25 170 65\`（年齡 身高 體重）
+
+💪 *快速記錄宏量：*
+發送：\`P35 C40 F12\` 直接記錄
 
 準備好了嗎？發送您的第一張食物照片！📸`,
       };
@@ -419,6 +462,7 @@ To update your profile, just tell me in natural language:
 *Core Features:*
 📸 Send food photo → Get instant analysis
 💬 Tell me about yourself → Set up profile
+💪 Send \`P35 C40 F12\` → Log macros directly
 
 *Commands:*
 • \`streak\` - View your logging streak
@@ -436,6 +480,7 @@ Use the buttons below!`,
 *核心功能：*
 📸 发送食物照片 → 获取即时分析
 💬 告诉我您的信息 → 设置画像
+💪 发送 \`P35 C40 F12\` → 直接记录宏量
 
 *命令：*
 • \`连续\` - 查看打卡连续
@@ -453,6 +498,7 @@ Use the buttons below!`,
 *核心功能：*
 📸 發送食物照片 → 獲取即時分析
 💬 告訴我您的信息 → 設置畫像
+💪 發送 \`P35 C40 F12\` → 直接記錄宏量
 
 *命令：*
 • \`連續\` - 查看打卡連續
@@ -777,6 +823,138 @@ For now, I automatically detect your language from your messages.`,
     }
   }
 
+  // ─── Macro input handlers ─────────────────────────
+  private async handleMacroLog(
+    macros: { protein?: number; carbs?: number; fat?: number },
+    message: Message,
+    context: MessageContext
+  ): Promise<void> {
+    try {
+      const p = macros.protein ?? 0;
+      const c = macros.carbs ?? 0;
+      const f = macros.fat ?? 0;
+      const cal = Math.round(p * 4 + c * 4 + f * 9);
+
+      // Build FoodRecognitionResult from raw macros
+      const { detectMealContext } = await import('@/lib/food-recognition/prompts');
+      const mealContext = detectMealContext(new Date());
+
+      const nutrition = {
+        calories: { min: cal, max: cal },
+        protein: { min: p, max: p },
+        carbs: { min: c, max: c },
+        fat: { min: f, max: f },
+        sodium: { min: 0, max: 0 },
+      };
+
+      const result = {
+        foods: [{
+          name: 'Manual macro entry',
+          nameLocal: context.language === 'en' ? 'Manual entry' : '手动输入',
+          confidence: 100,
+          portion: `P${p} C${c} F${f}`,
+          nutrition,
+        }],
+        totalNutrition: nutrition,
+        mealContext,
+      };
+
+      // Get rating
+      const { ratingEngine } = await import('@/lib/rating/rating-engine');
+      const profile = await profileManager.getProfile(context.userId);
+      const ratingProfile = profile ? {
+        userId: profile.user_id,
+        height: profile.height, weight: profile.weight,
+        age: profile.age ?? undefined, gender: profile.gender ?? undefined,
+        goal: profile.goal, activityLevel: profile.activity_level,
+        digestTime: profile.digest_time, quickMode: profile.quick_mode,
+        createdAt: new Date(profile.created_at), updatedAt: new Date(profile.updated_at),
+      } : {
+        userId: context.userId,
+        height: 170, weight: 65, age: 30, gender: 'male' as const,
+        goal: 'maintain' as const, activityLevel: 'light' as const,
+        digestTime: '21:00:00', quickMode: false,
+        createdAt: new Date(), updatedAt: new Date(),
+      };
+
+      const healthRating = await ratingEngine.evaluate(result as any, ratingProfile);
+
+      // Save to DB
+      const { createClient } = await import('@/lib/supabase/server');
+      const supabase = await createClient();
+      const { data: user } = await supabase
+        .from('users').select('id').eq('phone_number', message.from).maybeSingle();
+
+      let recordId: string | null = null;
+      if (user) {
+        const { data: record } = await supabase
+          .from('food_records')
+          .insert({
+            user_id: user.id, image_url: null, image_hash: null,
+            recognition_result: result as any, health_rating: healthRating as any,
+            meal_context: mealContext,
+          })
+          .select('id').single();
+        recordId = record?.id ?? null;
+      }
+
+      // Send response
+      const emoji = healthRating.score >= 80 ? '🟢' : healthRating.score >= 60 ? '🟡' : '🔴';
+      let response = `${emoji} *Manual Log*\n`;
+      response += `${cal} kcal · P${p}g · C${c}g · F${f}g · ${healthRating.score}/100`;
+
+      const tip = healthRating.suggestions?.[0];
+      if (tip) response += `\n\n💡 ${tip}`;
+
+      await whatsappClient.sendTextMessage(message.from, response);
+
+      // Buttons
+      if (recordId) {
+        const btns = context.language === 'en'
+          ? { detail: '📊 Details', ignore: '❌ Ignore' }
+          : { detail: '📊 详情', ignore: '❌ 忽略' };
+        await whatsappClient.sendInteractiveButtons(
+          message.from,
+          context.language === 'en' ? 'Tap for more info' : '点击查看更多',
+          [
+            { id: `detail_${recordId}`, title: btns.detail },
+            { id: `ignore_${recordId}`, title: btns.ignore },
+          ]
+        );
+      }
+
+      logger.info({ type: 'macro_log_success', userId: context.userId, macros, cal });
+    } catch (error) {
+      logger.error({
+        type: 'macro_log_error', userId: context.userId,
+        error: error instanceof Error ? error.message : 'Unknown',
+      });
+      await this.sendErrorMessage(message.from, context.language);
+    }
+  }
+
+  private async handlePartialMacro(
+    macros: { protein?: number; carbs?: number; fat?: number },
+    message: Message,
+    context: MessageContext
+  ): Promise<void> {
+    const parts: string[] = [];
+    if (macros.protein !== undefined) parts.push(`P${macros.protein}`);
+    if (macros.carbs !== undefined) parts.push(`C${macros.carbs}`);
+    if (macros.fat !== undefined) parts.push(`F${macros.fat}`);
+
+    const missing: string[] = [];
+    if (macros.protein === undefined) missing.push('P(protein)');
+    if (macros.carbs === undefined) missing.push('C(carbs)');
+    if (macros.fat === undefined) missing.push('F(fat)');
+
+    const msg = context.language === 'en'
+      ? `Got ${parts.join(' ')} — missing ${missing.join(', ')}.\nSend all together, e.g. *P35 C40 F12*`
+      : `收到 ${parts.join(' ')}，还缺 ${missing.join(', ')}。\n请一起发送，例如 *P35 C40 F12*`;
+
+    await whatsappClient.sendTextMessage(message.from, msg);
+  }
+
   private async handleGeneralChat(
     text: string,
     message: Message,
@@ -1045,8 +1223,8 @@ For now, I automatically detect your language from your messages.`,
       profileData,
     });
 
-    const { error: profileError } = await supabase
-      .from('health_profiles')
+    const { error: profileError } = await (supabase
+      .from('health_profiles') as any)
       .upsert(profileData, {
         onConflict: 'user_id',
       });

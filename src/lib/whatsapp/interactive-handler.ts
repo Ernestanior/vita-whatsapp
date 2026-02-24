@@ -145,7 +145,7 @@ export class InteractiveHandler {
       const supabase = await createClient();
       const { error } = await supabase
         .from('health_profiles')
-        .update({ goal })
+        .update({ goal: goal as any })
         .eq('user_id', context.userId);
 
       if (error) {
@@ -248,8 +248,8 @@ Keep sending food photos and I'll guide you. 💪`,
       }
 
       const detailMessage = responseFormatterSG.formatDetailResponse(
-        record.recognition_result,
-        record.health_rating
+        record.recognition_result as any,
+        record.health_rating as any
       );
 
       await whatsappClient.sendTextMessage(context.userId, detailMessage);

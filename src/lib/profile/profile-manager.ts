@@ -810,8 +810,8 @@ Please reply with the number (1-4):`,
     };
 
     // Save to database
-    const { error } = await supabase
-      .from('health_profiles')
+    const { error } = await (supabase
+      .from('health_profiles') as any)
       .insert(profileData);
 
     if (error) {
@@ -1120,7 +1120,7 @@ Please try again with the correct format.`,
       return null;
     }
 
-    return data as HealthProfile;
+    return data as unknown as HealthProfile;
   }
 
   /**
