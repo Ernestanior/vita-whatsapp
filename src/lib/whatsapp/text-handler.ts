@@ -32,6 +32,10 @@ export class TextHandler {
     '连续': UserIntent.STREAK, '連續': UserIntent.STREAK, '/打卡': UserIntent.STREAK, '打卡': UserIntent.STREAK,
     '/budget': UserIntent.BUDGET, 'budget': UserIntent.BUDGET, '/预算': UserIntent.BUDGET, '/預算': UserIntent.BUDGET,
     '预算': UserIntent.BUDGET, '預算': UserIntent.BUDGET,
+    // Common greetings → START
+    'hi': UserIntent.START, 'hello': UserIntent.START, 'hey': UserIntent.START,
+    '你好': UserIntent.START, '您好': UserIntent.START, '嗨': UserIntent.START,
+    '哈喽': UserIntent.START, '嘿': UserIntent.START,
   };
 
   // ─── Macro input parsing (P35 C40 F12) ──────────────
@@ -238,67 +242,37 @@ export class TextHandler {
         userId,
       });
 
-      // Send zero-input welcome message
+      // Send zero-input welcome message (keep under 1024 chars for WhatsApp)
       const messages = {
         'en': `👋 *Welcome to Vita AI!*
+Your personal nutrition assistant.
 
-I'm your personal nutrition assistant.
+📸 Send a food photo → instant analysis
+💪 Send \`P35 C40 F12\` → log macros
+📊 Send \`25 170 65\` → quick profile setup
 
-🚀 *Get Started in 3 Seconds:*
+No setup needed — I'll learn as we go!
+Send \`help\` for all commands.`,
 
-Just send me a photo of your food!
-📸 I'll analyze it instantly.
-
-No setup needed. I'll learn about you as we go.
-
-*Optional Quick Setup:*
-Want personalized advice now?
-Send: \`25 170 65\` (age height weight)
-
-💪 *Quick Macro Log:*
-Send: \`P35 C40 F12\` to log macros directly
-
-Ready? Send your first food photo! 📸`,
-        
         'zh-CN': `👋 *欢迎使用 Vita AI！*
+您的个人营养助手。
 
-我是您的个人营养助手。
+📸 发送食物照片 → 即时分析
+💪 发送 \`P35 C40 F12\` → 快速记录宏量
+📊 发送 \`25 170 65\` → 快速设置画像
 
-🚀 *3秒开始使用：*
+无需设置，边用边了解您！
+发送 \`帮助\` 查看所有命令。`,
 
-直接发送食物照片！
-📸 我会立即分析。
-
-无需设置。我会在使用中了解您。
-
-*可选快速设置：*
-想要个性化建议？
-发送：\`25 170 65\`（年龄 身高 体重）
-
-💪 *快速记录宏量：*
-发送：\`P35 C40 F12\` 直接记录
-
-准备好了吗？发送您的第一张食物照片！📸`,
-        
         'zh-TW': `👋 *歡迎使用 Vita AI！*
+您的個人營養助手。
 
-我是您的個人營養助手。
+📸 發送食物照片 → 即時分析
+💪 發送 \`P35 C40 F12\` → 快速記錄宏量
+📊 發送 \`25 170 65\` → 快速設置畫像
 
-🚀 *3秒開始使用：*
-
-直接發送食物照片！
-📸 我會立即分析。
-
-無需設置。我會在使用中了解您。
-
-*可選快速設置：*
-想要個性化建議？
-發送：\`25 170 65\`（年齡 身高 體重）
-
-💪 *快速記錄宏量：*
-發送：\`P35 C40 F12\` 直接記錄
-
-準備好了嗎？發送您的第一張食物照片！📸`,
+無需設置，邊用邊了解您！
+發送 \`幫助\` 查看所有命令。`,
       };
 
       // Send message with minimal buttons
