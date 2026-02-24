@@ -33,6 +33,10 @@ export class TextHandler {
     '连续': UserIntent.STREAK, '連續': UserIntent.STREAK, '/打卡': UserIntent.STREAK, '打卡': UserIntent.STREAK,
     '/budget': UserIntent.BUDGET, 'budget': UserIntent.BUDGET, '/预算': UserIntent.BUDGET, '/預算': UserIntent.BUDGET,
     '预算': UserIntent.BUDGET, '預算': UserIntent.BUDGET,
+    // Weekly report
+    '/weekly': UserIntent.WEEKLY_REPORT, 'weekly': UserIntent.WEEKLY_REPORT,
+    '/周报': UserIntent.WEEKLY_REPORT, '周报': UserIntent.WEEKLY_REPORT,
+    '週報': UserIntent.WEEKLY_REPORT, '/週報': UserIntent.WEEKLY_REPORT,
     // Common greetings → START
     'hi': UserIntent.START, 'hello': UserIntent.START, 'hey': UserIntent.START,
     '你好': UserIntent.START, '您好': UserIntent.START, '嗨': UserIntent.START,
@@ -197,6 +201,9 @@ export class TextHandler {
         }
         break;
       }
+      case UserIntent.WEEKLY_REPORT:
+        await this.handleWeeklyReport(message, context);
+        break;
       case UserIntent.QUICK_SETUP:
         if (extractedData?.quickSetupAge && extractedData?.quickSetupHeight && extractedData?.quickSetupWeight) {
           await this.handleQuickSetup(message.from, context, {
@@ -1645,6 +1652,39 @@ For now, I automatically detect your language from your messages.`,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       return false; // Fall through to normal conversation
+    }
+  }
+
+  /**
+   * Handle weekly report request — sends shareable card image
+   */
+  private async handleWeeklyReport(message: Message, context: MessageContext): Promise<void> {
+    const { fetchWeeklyData, buildCardChartUrl, buildCardCaption, buildTextReport } = await import('@/lib/weekly-report');
+    const { createClient } = await import('@supabase/supabase-js');
+
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_KEY!,
+    );
+
+    const isZh = context.language === 'zh-CN' || context.language === 'zh-TW';
+    const data = await fetchWeeklyData(supabase, context.userId);
+
+    if (!data) {
+      const noData = isZh
+        ? '📊 本周还没有记录哦，拍张食物照片开始吧！'
+        : '📊 No records this week yet — snap a food photo to get started!';
+      await whatsappClient.sendTextMessage(message.from, noData);
+      return;
+    }
+
+    try {
+      const chartUrl = buildCardChartUrl(data, isZh);
+      const caption = buildCardCaption(data, isZh);
+      await whatsappClient.sendImageMessage(message.from, chartUrl, caption);
+    } catch {
+      const text = buildTextReport(data, isZh);
+      await whatsappClient.sendTextMessage(message.from, text.trim());
     }
   }
 

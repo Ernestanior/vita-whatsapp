@@ -26,6 +26,8 @@ export enum UserIntent {
   MACRO_LOG = 'MACRO_LOG',
   // Supplement quick log
   SUPPLEMENT_LOG = 'SUPPLEMENT_LOG',
+  // Weekly report
+  WEEKLY_REPORT = 'WEEKLY_REPORT',
   // Phase 3
   STREAK = 'STREAK',
   BUDGET = 'BUDGET',
@@ -75,6 +77,7 @@ INTENTS:
 - BUDGET: Calorie budget. "预算", "budget"
 - GREETING: Simple greeting. "你好", "hi", "hello", "嗨"
 - SUPPLEMENT_LOG: User logs a supplement/protein product. "喝了一杯蛋白粉", "ate a protein bar", "吃了蛋白棒", "ON金标蛋白粉一勺", "quest bar", "creatine 5g", "吃了肌酸"
+- WEEKLY_REPORT: User requests weekly report/summary card. "周报", "weekly report", "本周报告", "这周吃得怎么样", "weekly summary", "show my week"
 - GENERAL: Anything else — nutrition questions, general chat, unclear.
 
 CRITICAL RULES:
@@ -120,7 +123,10 @@ User: "不想增肌了，想减脂" → {"intent":"PROFILE_UPDATE","confidence":
 User: "喝了一杯蛋白粉" → {"intent":"SUPPLEMENT_LOG","confidence":0.96,"extractedData":{"supplementDescription":"一杯蛋白粉"}}
 User: "ate a quest bar" → {"intent":"SUPPLEMENT_LOG","confidence":0.95,"extractedData":{"supplementDescription":"quest bar"}}
 User: "ON金标一勺" → {"intent":"SUPPLEMENT_LOG","confidence":0.94,"extractedData":{"supplementDescription":"ON金标一勺"}}
-User: "creatine 5g" → {"intent":"SUPPLEMENT_LOG","confidence":0.93,"extractedData":{"supplementDescription":"creatine 5g"}}`;
+User: "creatine 5g" → {"intent":"SUPPLEMENT_LOG","confidence":0.93,"extractedData":{"supplementDescription":"creatine 5g"}}
+User: "周报" → {"intent":"WEEKLY_REPORT","confidence":0.97,"extractedData":{}}
+User: "weekly report" → {"intent":"WEEKLY_REPORT","confidence":0.97,"extractedData":{}}
+User: "这周吃得怎么样" → {"intent":"WEEKLY_REPORT","confidence":0.92,"extractedData":{}}`;
 // ─── Valid intents for parsing ─────────────────────────
 const VALID_INTENTS = new Set(Object.values(UserIntent));
 
