@@ -14,6 +14,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { profileManager } from '@/lib/profile/profile-manager';
 import { ratingEngine } from '@/lib/rating/rating-engine';
+import { analyzeProteinDistribution, formatDistribution } from '@/lib/protein-distribution';
 import { logger } from '@/utils/logger';
 import type { DailyDigest, HealthProfile, FoodRecognitionResult, HealthRating } from '@/types';
 
@@ -84,6 +85,21 @@ export class DailyDigestGenerator {
         target.calories
       );
 
+      // 9. Protein distribution analysis
+      const proteinDistribution = analyzeProteinDistribution(
+        records.map(r => ({
+          protein: (r.recognitionResult.totalNutrition.protein.min + r.recognitionResult.totalNutrition.protein.max) / 2,
+          createdAt: r.createdAt,
+        }))
+      );
+
+      // 10. Add protein distribution insight
+      if (proteinDistribution.evenness < 40 && summary.nutritionBreakdown.protein > 0) {
+        insights.push('⚖️ Protein is unevenly spread — try to distribute it more evenly across meals for better absorption.');
+      } else if (proteinDistribution.evenness >= 80 && summary.nutritionBreakdown.protein > 0) {
+        insights.push('⚖️ Great protein distribution across meals!');
+      }
+
       logger.info({ userId, date, mealsCount: records.length }, 'Daily digest generated');
 
       return {
@@ -98,6 +114,7 @@ export class DailyDigestGenerator {
           protein: target.protein,
           carbs: target.carbs,
         },
+        proteinDistribution,
       };
     } catch (error) {
       logger.error({ error, userId, date }, 'Failed to generate daily digest');
@@ -508,6 +525,11 @@ ${digest.recommendations.join('\n')}
       message += `• Sodium: ${summary.nutritionBreakdown.sodium}mg\n\n`;
     }
 
+    // Protein distribution (P2-12)
+    if (digest.proteinDistribution && summary.nutritionBreakdown.protein > 0) {
+      message += formatDistribution(digest.proteinDistribution, 'en') + '\n\n';
+    }
+
     // Insights
     if (digest.insights.length > 0) {
       message += `💡 Key Insights:\n`;
@@ -569,6 +591,11 @@ ${digest.recommendations.join('\n')}
       message += `• 钠：${summary.nutritionBreakdown.sodium}毫克\n\n`;
     }
 
+    // Protein distribution (P2-12)
+    if (digest.proteinDistribution && summary.nutritionBreakdown.protein > 0) {
+      message += formatDistribution(digest.proteinDistribution, 'zh-CN') + '\n\n';
+    }
+
     // Insights
     if (digest.insights.length > 0) {
       message += `💡 关键洞察：\n`;
@@ -628,6 +655,11 @@ ${digest.recommendations.join('\n')}
       message += `• 碳水化合物：${summary.nutritionBreakdown.carbs}克\n`;
       message += `• 脂肪：${summary.nutritionBreakdown.fat}克\n`;
       message += `• 鈉：${summary.nutritionBreakdown.sodium}毫克\n\n`;
+    }
+
+    // Protein distribution (P2-12)
+    if (digest.proteinDistribution && summary.nutritionBreakdown.protein > 0) {
+      message += formatDistribution(digest.proteinDistribution, 'zh-TW') + '\n\n';
     }
 
     // Insights

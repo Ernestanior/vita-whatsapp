@@ -154,4 +154,11 @@ export interface DailyDigest {
     protein: number;
     carbs: number;
   };
+  proteinDistribution?: {
+    breakfast: number;  // grams
+    lunch: number;
+    dinner: number;
+    snack: number;
+    evenness: number;   // 0-100, 100 = perfectly even across 3 main meals
+  };
 }
