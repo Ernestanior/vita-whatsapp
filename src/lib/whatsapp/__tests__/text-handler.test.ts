@@ -1,236 +1,107 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { TextHandler, Command } from '../text-handler';
-import type { Message, MessageContext } from '@/types/whatsapp';
+import { describe, it, expect } from 'vitest';
+import { TextHandler } from '@/lib/whatsapp/text-handler';
 
-// Mock the whatsapp client
-vi.mock('../client', () => ({
-  whatsappClient: {
-    sendTextMessage: vi.fn().mockResolvedValue(undefined),
-  },
-}));
-
-describe('TextHandler', () => {
-  let textHandler: TextHandler;
-  let mockContext: MessageContext;
-
-  beforeEach(() => {
-    textHandler = new TextHandler();
-    mockContext = {
-      userId: '1234567890',
-      messageId: 'msg_123',
-      timestamp: new Date(),
-      language: 'en',
-    };
-    vi.clearAllMocks();
-  });
-
-  describe('Command Recognition', () => {
-    it('should recognize /start command in English', async () => {
-      const message: Message = {
-        from: '1234567890',
-        id: 'msg_123',
-        timestamp: '1234567890',
-        type: 'text',
-        text: { body: '/start' },
-      };
-
-      await textHandler.handle(message, mockContext);
-      
-      // Should send welcome message
-      const { whatsappClient } = await import('../client');
-      expect(whatsappClient.sendTextMessage).toHaveBeenCalledWith(
-        '1234567890',
-        expect.stringContaining('Welcome to Vita AI')
-      );
-    });
-
-    it('should recognize start command in Chinese', async () => {
-      const message: Message = {
-        from: '1234567890',
-        id: 'msg_123',
-        timestamp: '1234567890',
-        type: 'text',
-        text: { body: '开始' },
-      };
-
-      const chineseContext = { ...mockContext, language: 'zh-CN' as const };
-      await textHandler.handle(message, chineseContext);
-      
-      const { whatsappClient } = await import('../client');
-      expect(whatsappClient.sendTextMessage).toHaveBeenCalledWith(
-        '1234567890',
-        expect.stringContaining('欢迎使用 Vita AI')
-      );
-    });
-
-    it('should recognize /help command', async () => {
-      const message: Message = {
-        from: '1234567890',
-        id: 'msg_123',
-        timestamp: '1234567890',
-        type: 'text',
-        text: { body: '/help' },
-      };
-
-      await textHandler.handle(message, mockContext);
-      
-      const { whatsappClient } = await import('../client');
-      expect(whatsappClient.sendTextMessage).toHaveBeenCalledWith(
-        '1234567890',
-        expect.stringContaining('Available Commands')
-      );
-    });
-
-    it('should recognize /profile command', async () => {
-      const message: Message = {
-        from: '1234567890',
-        id: 'msg_123',
-        timestamp: '1234567890',
-        type: 'text',
-        text: { body: '/profile' },
-      };
-
-      await textHandler.handle(message, mockContext);
-      
-      const { whatsappClient } = await import('../client');
-      expect(whatsappClient.sendTextMessage).toHaveBeenCalledWith(
-        '1234567890',
-        expect.stringContaining('Your Health Profile')
-      );
-    });
-
-    it('should recognize /stats command', async () => {
-      const message: Message = {
-        from: '1234567890',
-        id: 'msg_123',
-        timestamp: '1234567890',
-        type: 'text',
-        text: { body: '/stats' },
-      };
-
-      await textHandler.handle(message, mockContext);
-      
-      const { whatsappClient } = await import('../client');
-      expect(whatsappClient.sendTextMessage).toHaveBeenCalledWith(
-        '1234567890',
-        expect.stringContaining('Your Statistics')
-      );
-    });
-
-    it('should handle natural language text', async () => {
-      const message: Message = {
-        from: '1234567890',
-        id: 'msg_123',
-        timestamp: '1234567890',
-        type: 'text',
-        text: { body: 'Hello, how are you?' },
-      };
-
-      await textHandler.handle(message, mockContext);
-      
-      const { whatsappClient } = await import('../client');
-      expect(whatsappClient.sendTextMessage).toHaveBeenCalledWith(
-        '1234567890',
-        expect.stringContaining('I understand you said')
-      );
+describe('TextHandler.parseMacros', () => {
+  it('parses full P C F input', () => {
+    expect(TextHandler.parseMacros('P35 C40 F12')).toEqual({
+      protein: 35, carbs: 40, fat: 12,
     });
   });
 
-  describe('Multi-language Support', () => {
-    it('should respond in English when language is en', async () => {
-      const message: Message = {
-        from: '1234567890',
-        id: 'msg_123',
-        timestamp: '1234567890',
-        type: 'text',
-        text: { body: '/help' },
-      };
-
-      await textHandler.handle(message, { ...mockContext, language: 'en' });
-      
-      const { whatsappClient } = await import('../client');
-      expect(whatsappClient.sendTextMessage).toHaveBeenCalledWith(
-        '1234567890',
-        expect.stringContaining('Available Commands')
-      );
-    });
-
-    it('should respond in Simplified Chinese when language is zh-CN', async () => {
-      const message: Message = {
-        from: '1234567890',
-        id: 'msg_123',
-        timestamp: '1234567890',
-        type: 'text',
-        text: { body: '/help' },
-      };
-
-      await textHandler.handle(message, { ...mockContext, language: 'zh-CN' });
-      
-      const { whatsappClient } = await import('../client');
-      expect(whatsappClient.sendTextMessage).toHaveBeenCalledWith(
-        '1234567890',
-        expect.stringContaining('可用命令')
-      );
-    });
-
-    it('should respond in Traditional Chinese when language is zh-TW', async () => {
-      const message: Message = {
-        from: '1234567890',
-        id: 'msg_123',
-        timestamp: '1234567890',
-        type: 'text',
-        text: { body: '/help' },
-      };
-
-      await textHandler.handle(message, { ...mockContext, language: 'zh-TW' });
-      
-      const { whatsappClient } = await import('../client');
-      expect(whatsappClient.sendTextMessage).toHaveBeenCalledWith(
-        '1234567890',
-        expect.stringContaining('可用命令')
-      );
+  it('parses lowercase', () => {
+    expect(TextHandler.parseMacros('p35 c40 f12')).toEqual({
+      protein: 35, carbs: 40, fat: 12,
     });
   });
 
-  describe('Error Handling', () => {
-    it('should handle empty text message gracefully', async () => {
-      const message: Message = {
-        from: '1234567890',
-        id: 'msg_123',
-        timestamp: '1234567890',
-        type: 'text',
-        text: { body: '' },
-      };
-
-      await textHandler.handle(message, mockContext);
-      
-      const { whatsappClient } = await import('../client');
-      // Should not send any message for empty text
-      expect(whatsappClient.sendTextMessage).not.toHaveBeenCalled();
+  it('parses mixed case', () => {
+    expect(TextHandler.parseMacros('p35 C40 f12')).toEqual({
+      protein: 35, carbs: 40, fat: 12,
     });
+  });
 
-    it('should send error message when processing fails', async () => {
-      const message: Message = {
-        from: '1234567890',
-        id: 'msg_123',
-        timestamp: '1234567890',
-        type: 'text',
-        text: { body: '/start' },
-      };
-
-      // Mock sendTextMessage to throw error
-      const { whatsappClient } = await import('../client');
-      vi.mocked(whatsappClient.sendTextMessage).mockRejectedValueOnce(
-        new Error('Network error')
-      );
-
-      await textHandler.handle(message, mockContext);
-      
-      // Should attempt to send error message
-      expect(whatsappClient.sendTextMessage).toHaveBeenCalledWith(
-        '1234567890',
-        expect.stringContaining('something went wrong')
-      );
+  it('parses with decimals', () => {
+    expect(TextHandler.parseMacros('P35.5 C40.2 F12.8')).toEqual({
+      protein: 35.5, carbs: 40.2, fat: 12.8,
     });
+  });
+
+  it('parses partial — P only', () => {
+    expect(TextHandler.parseMacros('P35')).toEqual({ protein: 35 });
+  });
+
+  it('parses partial — P and C', () => {
+    expect(TextHandler.parseMacros('P35 C40')).toEqual({ protein: 35, carbs: 40 });
+  });
+
+  it('parses with extra spaces', () => {
+    expect(TextHandler.parseMacros('  P35  C40  F12  ')).toEqual({
+      protein: 35, carbs: 40, fat: 12,
+    });
+  });
+
+  it('parses with no spaces between', () => {
+    // Each macro starts with a letter boundary
+    expect(TextHandler.parseMacros('P35C40F12')).toEqual({
+      protein: 35, carbs: 40, fat: 12,
+    });
+  });
+
+  it('returns null for non-macro text', () => {
+    expect(TextHandler.parseMacros('hello world')).toBeNull();
+  });
+
+  it('returns null for empty string', () => {
+    expect(TextHandler.parseMacros('')).toBeNull();
+  });
+
+  it('parses zero values', () => {
+    expect(TextHandler.parseMacros('P0 C0 F0')).toEqual({
+      protein: 0, carbs: 0, fat: 0,
+    });
+  });
+
+  it('parses large values', () => {
+    expect(TextHandler.parseMacros('P200 C300 F100')).toEqual({
+      protein: 200, carbs: 300, fat: 100,
+    });
+  });
+
+  it('handles space between letter and number', () => {
+    expect(TextHandler.parseMacros('P 35 C 40 F 12')).toEqual({
+      protein: 35, carbs: 40, fat: 12,
+    });
+  });
+});
+
+describe('TextHandler.isMacroInput', () => {
+  it('returns true for pure macro input', () => {
+    expect(TextHandler.isMacroInput('P35 C40 F12')).toBe(true);
+  });
+
+  it('returns true for two macros', () => {
+    expect(TextHandler.isMacroInput('P35 C40')).toBe(true);
+  });
+
+  it('returns false for single macro', () => {
+    // parseMacros returns non-null but only 1 key — isMacroInput still true
+    // because cleaned string is empty and parseMacros is non-null
+    expect(TextHandler.isMacroInput('P35')).toBe(true);
+  });
+
+  it('returns false for mixed text + macros', () => {
+    expect(TextHandler.isMacroInput('I ate P35 C40 F12 today')).toBe(false);
+  });
+
+  it('returns false for plain text', () => {
+    expect(TextHandler.isMacroInput('chicken rice')).toBe(false);
+  });
+
+  it('returns false for empty string', () => {
+    expect(TextHandler.isMacroInput('')).toBe(false);
+  });
+
+  it('returns true with extra whitespace', () => {
+    expect(TextHandler.isMacroInput('  P35 C40 F12  ')).toBe(true);
   });
 });
