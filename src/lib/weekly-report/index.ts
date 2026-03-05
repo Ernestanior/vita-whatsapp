@@ -27,19 +27,36 @@ const WEEKDAYS_ZH = ['周一', '周二', '周三', '周四', '周五', '周六',
 
 function getDayKey(dateStr: string): string {
   const d = new Date(dateStr);
-  return WEEKDAYS_EN[d.getDay() === 0 ? 6 : d.getDay() - 1];
+  // Use UTC to avoid server timezone issues (records stored in UTC)
+  const utcDay = d.getUTCDay();
+  return WEEKDAYS_EN[utcDay === 0 ? 6 : utcDay - 1];
+}
+
+/** Get start of current week (Monday 00:00 UTC+8) as ISO string */
+function getWeekStartISO(): string {
+  const now = new Date();
+  // Convert to Singapore time (UTC+8)
+  const sgOffset = 8 * 60 * 60 * 1000;
+  const sgNow = new Date(now.getTime() + sgOffset);
+  const sgDay = sgNow.getUTCDay(); // 0=Sun, 1=Mon...
+  const daysSinceMonday = sgDay === 0 ? 6 : sgDay - 1;
+  // Go back to Monday 00:00 SGT
+  const sgMonday = new Date(sgNow);
+  sgMonday.setUTCHours(0, 0, 0, 0);
+  sgMonday.setUTCDate(sgMonday.getUTCDate() - daysSinceMonday);
+  // Convert back to UTC for DB query
+  return new Date(sgMonday.getTime() - sgOffset).toISOString();
 }
 
 // ── Data Aggregation ───────────────────────────────────
 export async function fetchWeeklyData(supabase: any, userId: string): Promise<WeeklyReportData | null> {
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const weekStart = getWeekStartISO();
 
   const { data: records } = await supabase
     .from('food_records')
     .select('recognition_result, health_rating, created_at')
     .eq('user_id', userId)
-    .gte('created_at', sevenDaysAgo.toISOString());
+    .gte('created_at', weekStart);
 
   if (!records || records.length === 0) return null;
 
