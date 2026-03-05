@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/meal-reminder",
-      "schedule": "0 4,8 * * *"
+      "schedule": "0 4 * * *"
     },
     {
       "path": "/api/cron/weekly-trend",
