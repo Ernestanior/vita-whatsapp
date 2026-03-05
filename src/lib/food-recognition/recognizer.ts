@@ -1,4 +1,6 @@
 import { openai } from '@/lib/openai/client';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { env } from '@/config/env';
 import { logger } from '@/utils/logger';
 import { FoodRecognitionResult, ErrorType } from '@/types';
 import { imageHandler } from './image-handler';
@@ -324,7 +326,7 @@ export class FoodRecognizer {
     const startTime = Date.now();
 
     try {
-      logger.info({ userId: context.userId, text: text.substring(0, 50) }, 'Starting text food recognition');
+      logger.info({ userId: context.userId, text: text.substring(0, 50) }, 'Starting text food recognition (Gemini)');
 
       const systemPrompt = buildFoodRecognitionPrompt({
         language: context.language,
@@ -337,24 +339,33 @@ User said: "${text}"
 
 Return the same JSON format as image recognition. Set confidence to 70 for text-based estimates. If the description is vague, use standard Singapore hawker portions.`;
 
-      const response = await Promise.race([
-        openai.chat.completions.create({
-          model: this.MODEL,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          max_tokens: this.MAX_TOKENS,
+      const genAI = new GoogleGenerativeAI(env.GOOGLE_AI_API_KEY);
+      const model = genAI.getGenerativeModel({
+        model: 'gemini-2.5-flash',
+        generationConfig: {
           temperature: this.TEMPERATURE,
-          response_format: { type: 'json_object' },
-        }),
+          maxOutputTokens: this.MAX_TOKENS,
+          responseMimeType: 'application/json',
+        },
+        systemInstruction: systemPrompt,
+      });
+
+      const result = await Promise.race([
+        model.generateContent(userPrompt),
         this.createTimeoutPromise(),
       ]);
 
       const processingTime = Date.now() - startTime;
-      const tokensUsed = response.usage?.total_tokens || 0;
+      const raw = result.response.text().trim();
+      const tokensUsed = result.response.usageMetadata?.totalTokenCount || 0;
 
-      const content = response.choices[0]?.message?.content;
+      logger.info({
+        tokensUsed,
+        processingTime,
+        model: 'gemini-2.5-flash',
+      }, 'Gemini text food recognition completed');
+
+      const content = raw;
       if (!content) {
         return this.createErrorResponse(
           ErrorType.AI_API_ERROR,
@@ -363,14 +374,20 @@ Return the same JSON format as image recognition. Set confidence to 70 for text-
         );
       }
 
-      const result = JSON.parse(content) as FoodRecognitionResult;
+      // Strip markdown code fences if present
+      let cleaned = content;
+      if (cleaned.startsWith('```')) {
+        cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+      }
 
-      const validationError = this.validateResult(result);
+      const parsed = JSON.parse(cleaned) as FoodRecognitionResult;
+
+      const validationError = this.validateResult(parsed);
       if (validationError) {
         return this.createErrorResponse(ErrorType.AI_API_ERROR, validationError);
       }
 
-      const enrichedResult = this.enrichResult(result, context);
+      const enrichedResult = this.enrichResult(parsed, context);
 
       logger.info({
         foodCount: enrichedResult.foods.length,

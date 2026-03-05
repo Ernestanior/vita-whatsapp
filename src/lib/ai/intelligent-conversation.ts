@@ -3,7 +3,7 @@
  * Provides context-aware, reasoning-capable AI responses
  */
 
-import { OpenAI } from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { env } from '@/config/env';
 import { logger } from '@/utils/logger';
 import { createClient } from '@/lib/supabase/server';
@@ -40,12 +40,10 @@ interface ConversationContext {
 }
 
 export class IntelligentConversationHandler {
-  private openai: OpenAI;
+  private genAI: GoogleGenerativeAI;
 
   constructor() {
-    this.openai = new OpenAI({
-      apiKey: env.OPENAI_API_KEY,
-    });
+    this.genAI = new GoogleGenerativeAI(env.GOOGLE_AI_API_KEY);
   }
 
   /**
@@ -66,23 +64,31 @@ export class IntelligentConversationHandler {
       // Build conversation history
       const messages = this.buildConversationHistory(conversationContext, userMessage);
 
-      // Generate response with GPT-4o-mini (better reasoning)
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...messages,
-        ],
-        max_tokens: 300,
-        temperature: 0.7,
+      // Generate response with Gemini 2.5 Flash
+      const model = this.genAI.getGenerativeModel({
+        model: 'gemini-2.5-flash',
+        generationConfig: {
+          maxOutputTokens: 300,
+          temperature: 0.7,
+        },
+        systemInstruction: systemPrompt,
       });
+
+      const chatHistory = messages.slice(0, -1).map(msg => ({
+        role: msg.role === 'assistant' ? 'model' as const : 'user' as const,
+        parts: [{ text: msg.content }],
+      }));
+
+      const chat = model.startChat({ history: chatHistory });
+      const lastMessage = messages[messages.length - 1];
+      const result = await chat.sendMessage(lastMessage.content);
 
       const fallbackMsg = context.language === 'zh-CN'
         ? '抱歉，我暂时无法回复，请稍后再试。'
         : context.language === 'zh-TW'
         ? '抱歉，我暫時無法回覆，請稍後再試。'
         : 'Sorry, I could not generate a response. Please try again.';
-      const aiResponse = response.choices[0]?.message?.content || fallbackMsg;
+      const aiResponse = result.response.text()?.trim() || fallbackMsg;
 
       // Store this conversation for future context
       await this.storeConversation(userId, userMessage, aiResponse);
